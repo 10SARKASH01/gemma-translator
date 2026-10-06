@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* Simple Retro-Terminal Style optimized for 480x320 Handheld (Landscape) */
+/* Retro-terminal style, including 480x320 handheld touchscreens. */
 :root {
   --bg-black: #ffa500;
   --red-bright: #000000;
@@ -53,10 +53,6 @@ body {
   body {
     cursor: auto;
   }
-
-  #root {
-    border: 1px solid var(--border-color);
-  }
 }
 
 body {
@@ -65,13 +61,16 @@ body {
   align-items: flex-start;
 }
 
-/* App Wrapper - hardcoded 480x320 landscape */
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Fill the display without scaling or cropping the touch targets. */
 .translator-envelope {
   position: relative;
-  width: 480px;
-  max-width: 480px;
-  height: 320px;
-  max-height: 320px;
+  width: 100%;
+  height: 100%;
   background-color: var(--bg-black);
   overflow: hidden;
   display: flex;
@@ -136,6 +135,9 @@ body {
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 3px;
+  width: 44px;
+  height: 44px;
+  touch-action: manipulation;
 }
 
 .config-toggle-btn:active {
@@ -154,7 +156,7 @@ body {
 .languages-container {
   display: flex;
   width: 100%;
-  height: 60px;
+  height: 124px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-black);
 }
@@ -164,7 +166,8 @@ body {
   position: relative;
   width: 50%;
   height: 100%;
-  padding: 8px;
+  min-width: 0;
+  padding: 6px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -251,16 +254,14 @@ body {
 }
 
 .lane-header {
-  position: absolute;
-  top: 6px;
-  left: 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .lane-label {
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 14px;
   font-weight: 700;
   color: var(--red-bright);
 }
@@ -279,7 +280,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1;
+  flex: 0 0 44px;
   min-height: 0;
 }
 
@@ -288,8 +289,8 @@ body {
   border: 1px solid var(--border-color);
   color: var(--red-bright);
   font-size: 12px;
-  width: 18px;
-  height: 18px;
+  width: 44px;
+  height: 44px;
   border-radius: 2px;
   cursor: pointer;
   display: flex;
@@ -300,7 +301,41 @@ body {
   transition:
     background 0.1s,
     color 0.1s;
-  visibility: hidden; /* keyboard-first kiosk: arrows kept for layout only */
+  touch-action: manipulation;
+}
+
+.push-to-talk-btn {
+  width: 100%;
+  min-height: 44px;
+  flex-shrink: 0;
+  background: var(--bg-black);
+  color: var(--red-bright);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 4px;
+  font-size: clamp(10px, 2.5vw, 13px);
+  font-weight: 700;
+  cursor: pointer;
+  /* A held finger must keep recording rather than pan the page. */
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+.language-lane.recording .push-to-talk-btn {
+  background: var(--red-bright);
+  color: var(--bg-black);
+  border-color: var(--bg-black);
+}
+
+.rotator-arrow:disabled,
+.push-to-talk-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -4px;
 }
 
 .rotator-arrow:active,
@@ -335,7 +370,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  font-size: clamp(11px, 3vw, 17px);
   font-weight: 700;
   color: var(--red-bright);
   white-space: nowrap;
@@ -409,6 +444,7 @@ body {
   width: 100%;
   font-size: 12px;
   color: var(--red-bright);
+  height: 44px;
   padding: 8px 12px;
   border-bottom: 2px solid var(--border-color);
   background: var(--bg-black);
@@ -424,7 +460,9 @@ body {
   padding: 6px 8px 4px;
   gap: 4px;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
 }
 
 .initial-placeholder {
@@ -442,7 +480,7 @@ body {
 /* Each row is a flex row that aligns the bubble */
 .chat-row {
   display: flex;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -483,18 +521,6 @@ body {
     background 0.15s,
     color 0.15s,
     border-color 0.15s;
-}
-
-.bubble-right:hover {
-  background: var(--red-muted);
-}
-
-.bubble-right:active {
-  background: var(--red-bright);
-}
-.bubble-right:active .bubble-text,
-.bubble-right:active .bubble-label {
-  color: var(--bg-black);
 }
 
 .bubble-label {
@@ -557,7 +583,8 @@ body {
 }
 
 .overlay-header {
-  height: 38px;
+  min-height: 44px;
+  flex-shrink: 0;
   padding: 0 10px;
   background: var(--bg-black);
   border-bottom: 1px solid var(--border-color);
@@ -578,15 +605,20 @@ body {
   color: var(--red-bright);
   font-size: 18px;
   cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  touch-action: manipulation;
 }
 
 .overlay-body {
+  min-height: 0;
   flex-grow: 1;
   overflow-y: auto;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  touch-action: pan-y;
 }
 
 .form-group {
@@ -614,6 +646,7 @@ body {
 .overlay-body input[type="text"],
 .overlay-body input[type="password"],
 .overlay-body select {
+  min-height: 44px;
   background-color: var(--bg-black);
   border: 1px solid var(--border-color);
   border-radius: 2px;
@@ -631,6 +664,8 @@ body {
 }
 
 .overlay-btn {
+  min-height: 44px;
+  touch-action: manipulation;
   background: var(--bg-black);
   border: 1px solid var(--border-color);
   color: var(--red-bright);
@@ -658,6 +693,7 @@ body {
 }
 
 .checkbox-container {
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -687,6 +723,7 @@ body {
 }
 
 .slider-group input[type="range"] {
+  min-height: 44px;
   width: 100%;
   accent-color: var(--red-bright);
 }
@@ -697,7 +734,7 @@ body {
 
 .app-container {
   position: relative;
-  width: 480px;
-  height: 320px;
+  width: 100%;
+  height: 100%;
 }
 

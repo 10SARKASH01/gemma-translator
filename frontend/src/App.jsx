@@ -72,13 +72,15 @@ function App() {
           className="config-toggle-btn"
           onClick={() => setIsSettingsOpen(true)}
           title="Settings"
+          aria-label="Settings"
+          aria-expanded={isSettingsOpen}
         >
           ⚙️
         </button>
       </div>
 
       <div style={{ height: '100%' }}>
-        <TranslatorApp config={config} />
+        <TranslatorApp config={config} controlsDisabled={isSettingsOpen} />
       </div>
 
       <SettingsOverlay

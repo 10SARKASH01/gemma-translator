@@ -33,38 +33,60 @@ export function useAudioRecorder() {
   const scriptProcessorRef = useRef(null)
   const streamRef = useRef(null)
   const recordedSamplesRef = useRef([])
+  const recordingRef = useRef(false)
+  const requestRef = useRef(0)
 
-  useEffect(() => {
-    return () => {
-      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close()
-      }
+  const releaseMicrophone = useCallback(async () => {
+    requestRef.current++
+    recordingRef.current = false
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    if (scriptProcessorRef.current) {
+      scriptProcessorRef.current.onaudioprocess = null
+      scriptProcessorRef.current.disconnect()
+      scriptProcessorRef.current = null
     }
+    sourceRef.current?.disconnect()
+    sourceRef.current = null
+    analyserRef.current?.disconnect()
+    analyserRef.current = null
+    const context = audioContextRef.current
+    audioContextRef.current = null
+    if (context && context.state !== "closed") await context.close()
   }, [])
 
+  useEffect(() => {
+    return () => { releaseMicrophone().catch(console.error) }
+  }, [releaseMicrophone])
+
   const startRecording = useCallback(async () => {
+    const request = ++requestRef.current
     setMicError(null)
     try {
+      // Create/resume within the user gesture, before awaiting mic permission.
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      const context = new AudioContext()
+      audioContextRef.current = context
+      if (context.state === "suspended") await context.resume()
+      if (request !== requestRef.current) return false
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       })
-
+      if (request !== requestRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return false
+      }
       streamRef.current = stream
 
-      const AudioContext = window.AudioContext || window.webkitAudioContext
-      audioContextRef.current = new AudioContext()
-      if (audioContextRef.current.state === "suspended") {
-        await audioContextRef.current.resume()
-      }
-      const source = audioContextRef.current.createMediaStreamSource(stream)
+      const source = context.createMediaStreamSource(stream)
       sourceRef.current = source
 
       // Small FFT — the analyser only feeds the low-res bar visualizer.
-      analyserRef.current = audioContextRef.current.createAnalyser()
+      analyserRef.current = context.createAnalyser()
       analyserRef.current.fftSize = 256
       source.connect(analyserRef.current)
 
-      const scriptProcessor = audioContextRef.current.createScriptProcessor(4096, 1, 1)
+      const scriptProcessor = context.createScriptProcessor(4096, 1, 1)
       scriptProcessorRef.current = scriptProcessor
       recordedSamplesRef.current = []
 
@@ -74,43 +96,27 @@ export function useAudioRecorder() {
       }
 
       source.connect(scriptProcessor)
-      scriptProcessor.connect(audioContextRef.current.destination)
+      scriptProcessor.connect(context.destination)
 
+      recordingRef.current = true
       setIsRecording(true)
       return true
     } catch (err) {
+      if (request !== requestRef.current) return false
+      await releaseMicrophone().catch(console.error)
       console.error("Error accessing microphone:", err)
       const msg = err.message || "Microphone access failed (HTTPS required for remote devices)"
       setMicError(msg)
       return false
     }
-  }, [])
+  }, [releaseMicrophone])
 
   const stopRecording = useCallback(async () => {
-    if (!isRecording) return
+    if (!recordingRef.current) return
 
     setIsRecording(false)
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-    }
-
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect()
-      scriptProcessorRef.current.onaudioprocess = null
-      scriptProcessorRef.current = null
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect()
-      sourceRef.current = null
-    }
-    if (analyserRef.current) {
-      analyserRef.current.disconnect()
-    }
-
     const actualSampleRate = audioContextRef.current?.sampleRate || 16000
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      await audioContextRef.current.close()
-    }
+    await releaseMicrophone()
 
     if (recordedSamplesRef.current.length === 0) {
       console.warn("No audio samples recorded")
@@ -136,7 +142,7 @@ export function useAudioRecorder() {
       console.error("Base64 encoding failed:", err)
       return null
     }
-  }, [isRecording])
+  }, [releaseMicrophone])
 
   return {
     isRecording,

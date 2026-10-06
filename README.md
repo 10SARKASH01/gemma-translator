@@ -11,6 +11,7 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
 - **On-Device Inference**: Uses LiteRT-LM to run the `gemma4-e2b` model entirely locally. No internet required after setup.
 - **Voice Interface**: Captures microphone audio, processes it, and sends it to the local model.
 - **Optimized UI**: Retro-terminal styling custom-built for small hardware screens (like Raspberry Pi displays).
+- **Touch controls**: Tap the language arrows and hold either person's on-screen talk button. The same interface also supports mouse and keyboard input.
 - **Unified Startup**: One script to launch the LLM server, the Python API, and the React frontend.
 - **Persian and Urdu**: Offline voice input/output in either lane, with RTL text. Persian/Urdu STT uses multilingual whisper.cpp; Persian TTS uses Piper, and Urdu TTS uses eSpeak NG. Existing languages keep Moonshine.
 - **French**: French (`fr`) works in both directions using the shared Whisper recognizer, Gemma translation, and Moonshine's French voice.
@@ -84,8 +85,8 @@ To deploy as a permanent systemd kiosk service on a Raspberry Pi 5 (8GB):
 This automated script installs Debian audio/venv packages, sets up the Python environment, builds production UI assets, downloads the LiteRT model, registers the systemd unit from `deploy/gemma-translator.service`, and configures LXDE GUI autostart (`~/.config/lxsession/rpd-x/autostart`) to launch Chromium in kiosk mode pointing to `http://localhost:3000`.
 
 For Persian/Urdu, no manual recording or extra runtime server is required.
-Select either language with the existing revolver keys and hold/release the
-normal recording key. Enable Speech Output in settings to hear the result.
+Select either language with the revolver arrows or keys and hold/release that
+person's talk button or recording key. Enable Speech Output in settings to hear the result.
 Copy `speech.env.example` to `speech.env` before setup if you need custom
 executable/model paths; the same settings are read by startup and systemd.
 
@@ -99,6 +100,26 @@ executable/model paths; the same settings are read by startup and systemd.
 - `download_model.sh` - Fetches the required LiteRT model.
 - `start.sh` - Multi-process launcher supporting `--prod` and development modes.
 - `deploy-pi.sh` - One-command Raspberry Pi automated deployment script.
+
+## Touchscreen Controls
+
+Both keyboard modes also support touch, without changing any settings:
+
+- Tap **◀ / ▶** beside either language to switch that person's language. The two people always have different languages.
+- **Hold to talk** under your language, speak, then lift your finger to transcribe, translate, and speak the result in the other person's language. Holding the other button reverses the direction.
+- Allow microphone access on the first use. Wait for **Release to translate** before speaking; a quick tap released during microphone setup is discarded.
+- You can slide your finger off the button while holding; lifting it still ends the recording. Interrupted touches, opening Settings, or leaving the window cancel the recording.
+- Tap **⚙** for settings. Scroll the results or settings with your finger when the text is long.
+
+The layout fills the screen, including 480×320 displays, with 44-pixel language and talk controls. Use Chromium on the Pi at `http://localhost:3000` (production) or `http://localhost:5173` (development) so microphone access works. Access from another device requires HTTPS.
+
+After updating an existing installation, rebuild the frontend before restarting production mode:
+
+```bash
+git pull --ff-only
+npm --prefix frontend run build
+./start.sh --prod
+```
 
 ## Keyboard Shortcuts
 
@@ -142,8 +163,8 @@ Notes:
 
 ### Common behavior (both modes)
 - **Input focus guard:** all shortcuts are ignored while focus is on a configuration field (`<input>`, `<textarea>`, or `<select>`) — e.g. when editing the API endpoint or settings.
-- **Recording lock:** language rotation is blocked while a recording is in progress.
-- **Keyboard-driven:** recording and language rotation are keyboard-only in the current build; on-screen touch controls are not enabled.
+- **Recording lock:** language rotation is blocked while the microphone starts, records, or finishes encoding. Only the finger, mouse button, or key that started a recording can end it.
+- **Touch and keyboard:** both modes keep their original shortcuts and also provide on-screen language arrows and hold-to-talk buttons.
 
 ### Switching modes
 Open **Settings (⚙)** → **Keyboard Mode** → choose **Landscape** or **Vertical**. The change takes effect immediately and persists on the device.

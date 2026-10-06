@@ -27,12 +27,13 @@ import {
 import { playBlip } from "./utils/audio-blip"
 import { AVAILABLE_LANGUAGES, buildTranslationPrompt } from "./utils/languages"
 import { createSpeechPlayer } from "./utils/speech-player"
+import { createPushToTalk } from "./utils/push-to-talk"
 
 // Core orchestrator for the two-person kiosk translator.
-// Flow: hold a key → record mic (useAudioRecorder) → POST /api/stt (local STT)
+// Flow: hold a key or touch button → record mic → POST /api/stt (local STT)
 // → LLM translation via /proxy (Gemma, strict-JSON prompt) → /api/tts playback.
 
-function TranslatorApp({ config }) {
+function TranslatorApp({ config, controlsDisabled = false }) {
   // UI State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [activePerson, setActivePerson] = useState(1)
@@ -52,6 +53,8 @@ function TranslatorApp({ config }) {
 
   const speechPlayerRef = useRef(null)
   const translationSessionRef = useRef(0)
+  const pushToTalkRef = useRef(null)
+  const recordingHandlersRef = useRef(null)
 
   // Language Lanes State
   const [lang1Index, setLang1Index] = useState(0)
@@ -78,6 +81,7 @@ function TranslatorApp({ config }) {
 
   useEffect(() => () => {
     translationSessionRef.current++
+    pushToTalkRef.current?.cancel()
     stopSpeaking()
   }, [stopSpeaking])
 
@@ -99,7 +103,7 @@ function TranslatorApp({ config }) {
   // (the two lanes may never show the same language).
   const handleRotateLanguage = useCallback(
     (lane, direction) => {
-      if (isRecording) return
+      if (controlsDisabled || pushToTalkRef.current?.busy) return
       const N = AVAILABLE_LANGUAGES.length
 
       playBlip("language")
@@ -114,56 +118,13 @@ function TranslatorApp({ config }) {
         setLang2Index(ni)
       }
     },
-    [lang1Index, lang2Index, isRecording],
+    [lang1Index, lang2Index, controlsDisabled],
   )
-
-  // Recording triggers
-  const handleRecordStart = useCallback(
-    async (lane) => {
-      if (isRecording) return
-      translationSessionRef.current++
-      stopSpeaking()
-
-      setActivePerson((prev) => {
-        if (prev !== lane) playBlip("speaker")
-        return lane
-      })
-      setActiveLaneRecording(lane)
-      playBlip("ping")
-
-      const ok = await startRecording()
-      if (!ok) {
-        setActiveLaneRecording(null)
-      }
-    },
-    [isRecording, stopSpeaking, startRecording],
-  )
-
-  const handleRecordStop = useCallback(async () => {
-    if (!isRecording) return
-
-    const recordedLane = activeLaneRecording
-    setActiveLaneRecording(null)
-    const audioData = await stopRecording()
-
-    if (audioData) {
-      processTranslation(recordedLane, audioData.base64Data)
-    }
-  }, [isRecording, activeLaneRecording, stopRecording])
 
   // Translation Pipeline
-  const processTranslation = async (lane, base64Data) => {
+  const processTranslation = async ({ src, dst }, base64Data) => {
     const session = ++translationSessionRef.current
     setIsDrawerOpen(true)
-
-    const src =
-      lane === 1
-        ? AVAILABLE_LANGUAGES[lang1Index]
-        : AVAILABLE_LANGUAGES[lang2Index]
-    const dst =
-      lane === 1
-        ? AVAILABLE_LANGUAGES[lang2Index]
-        : AVAILABLE_LANGUAGES[lang1Index]
 
     setTranscriptionData({
       source: `${src.name} (Source)`,
@@ -225,25 +186,84 @@ function TranslatorApp({ config }) {
     }
   }
 
+  // Share one mic owner across touch, mouse, and keyboard. Snapshot languages
+  // at press time; lock rotation even while microphone permission is pending.
+  recordingHandlersRef.current = {
+    startRecording,
+    stopRecording,
+    onStart: ({ lane }) => {
+      translationSessionRef.current++
+      stopSpeaking()
+      if (activePerson !== lane) playBlip("speaker")
+      setActivePerson(lane)
+      setActiveLaneRecording(lane)
+      playBlip("ping")
+    },
+    onAudio: (context, audio) => processTranslation(context, audio.base64Data),
+  }
+  if (!pushToTalkRef.current) {
+    pushToTalkRef.current = createPushToTalk({
+      start: () => recordingHandlersRef.current.startRecording(),
+      stop: () => recordingHandlersRef.current.stopRecording(),
+      onStart: (context) => recordingHandlersRef.current.onStart(context),
+      onEnd: () => setActiveLaneRecording(null),
+      onAudio: (context, audio) => recordingHandlersRef.current.onAudio(context, audio),
+      onError: (error) => {
+        setIsDrawerOpen(true)
+        setTranslationData({ target: "Microphone", text: `Error: ${error.message}` })
+      },
+    })
+  }
+
+  const handleRecordStart = useCallback((lane, owner) => {
+    if (controlsDisabled) return false
+    return pushToTalkRef.current.press({
+      lane,
+      src: AVAILABLE_LANGUAGES[lane === 1 ? lang1Index : lang2Index],
+      dst: AVAILABLE_LANGUAGES[lane === 1 ? lang2Index : lang1Index],
+    }, owner)
+  }, [controlsDisabled, lang1Index, lang2Index])
+
+  const handleRecordStop = useCallback((owner, cancel = false) => {
+    pushToTalkRef.current.release(owner, cancel)
+  }, [])
+
+  useEffect(() => {
+    if (controlsDisabled) pushToTalkRef.current.cancel()
+  }, [controlsDisabled])
+
+  useEffect(() => {
+    const cancel = () => pushToTalkRef.current.cancel()
+    const onVisibility = () => { if (document.hidden) cancel() }
+    window.addEventListener("blur", cancel)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener("blur", cancel)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [])
+
   // Push-to-talk keyboard control (two modes, see README):
   // landscape = one "active person" driven by Space/Z/arrows;
   // vertical   = independent per-lane keys (Z/X for record, arrows and -/+).
   // keydown starts recording, keyup stops — e.repeat guards auto-repeat.
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (controlsDisabled) return
       if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return
       const key = e.key.toLowerCase()
+      if (e.target.closest("button") && [" ", "enter"].includes(key)) return
 
       if (config.keyboardMode === "landscape") {
         if (key === " " || e.key === "Spacebar") {
           e.preventDefault()
-          if (!isRecording) {
+          if (!e.repeat && !pushToTalkRef.current.busy) {
             playBlip("speaker")
             setActivePerson((p) => (p === 1 ? 2 : 1))
           }
         } else if (key === "z") {
           e.preventDefault()
-          if (!e.repeat && !isRecording) handleRecordStart(activePerson)
+          if (!e.repeat) handleRecordStart(activePerson, "keyboard:z")
         } else if (e.key === "ArrowLeft") {
           e.preventDefault()
           handleRotateLanguage(activePerson, -1)
@@ -254,10 +274,10 @@ function TranslatorApp({ config }) {
       } else {
         if (key === "z") {
           e.preventDefault()
-          if (!e.repeat && !isRecording) handleRecordStart(1)
+          if (!e.repeat) handleRecordStart(1, "keyboard:z")
         } else if (key === "x") {
           e.preventDefault()
-          if (!e.repeat && !isRecording) handleRecordStart(2)
+          if (!e.repeat) handleRecordStart(2, "keyboard:x")
         } else if (e.key === "ArrowLeft") {
           e.preventDefault()
           handleRotateLanguage(1, -1)
@@ -275,15 +295,8 @@ function TranslatorApp({ config }) {
     }
 
     const handleKeyUp = (e) => {
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return
       const key = e.key.toLowerCase()
-
-      if (config.keyboardMode === "landscape") {
-        if (key === "z" && isRecording) handleRecordStop()
-      } else {
-        if (key === "z" && activeLaneRecording === 1) handleRecordStop()
-        if (key === "x" && activeLaneRecording === 2) handleRecordStop()
-      }
+      if (key === "z" || key === "x") handleRecordStop(`keyboard:${key}`)
     }
 
     window.addEventListener("keydown", handleKeyDown)
@@ -294,9 +307,8 @@ function TranslatorApp({ config }) {
     }
   }, [
     config.keyboardMode,
-    isRecording,
+    controlsDisabled,
     activePerson,
-    activeLaneRecording,
     handleRecordStart,
     handleRecordStop,
     handleRotateLanguage,
@@ -324,10 +336,15 @@ function TranslatorApp({ config }) {
             languages={AVAILABLE_LANGUAGES}
             currentIndex={lang1Index}
             isRecording={activeLaneRecording === 1}
+            isPreparing={activeLaneRecording === 1 && !isRecording}
+            rotationDisabled={controlsDisabled || activeLaneRecording !== null}
+            talkDisabled={controlsDisabled || activeLaneRecording === 2}
             isActivePerson={
               config.keyboardMode === "landscape" && activePerson === 1
             }
             onRotate={(dir) => handleRotateLanguage(1, dir)}
+            onRecordStart={(owner) => handleRecordStart(1, owner)}
+            onRecordStop={handleRecordStop}
           />
           <LanguageLane
             laneId={2}
@@ -335,10 +352,15 @@ function TranslatorApp({ config }) {
             languages={AVAILABLE_LANGUAGES}
             currentIndex={lang2Index}
             isRecording={activeLaneRecording === 2}
+            isPreparing={activeLaneRecording === 2 && !isRecording}
+            rotationDisabled={controlsDisabled || activeLaneRecording !== null}
+            talkDisabled={controlsDisabled || activeLaneRecording === 1}
             isActivePerson={
               config.keyboardMode === "landscape" && activePerson === 2
             }
             onRotate={(dir) => handleRotateLanguage(2, dir)}
+            onRecordStart={(owner) => handleRecordStart(2, owner)}
+            onRecordStop={handleRecordStop}
           />
         </div>
 
