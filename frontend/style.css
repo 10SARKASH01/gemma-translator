@@ -513,6 +513,16 @@ body {
   user-select: text;
 }
 
+/* Direction is scoped to speech text; lane layout and English labels stay LTR.
+   Debian setup installs these Arabic-script fonts for offline glyph coverage. */
+.bubble-text[dir="rtl"] {
+  font-family: "Noto Naskh Arabic", "Noto Sans Arabic", var(--font-mono) !important;
+  text-align: start;
+  unicode-bidi: plaintext;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
 .chat-meta {
   visibility: hidden; /* duration/tokens are computed but hidden on the kiosk */
   font-size: 9px;

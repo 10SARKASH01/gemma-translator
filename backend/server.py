@@ -30,57 +30,63 @@ import ssl
 import threading
 from collections import OrderedDict
 
-# Multilingual STT via Moonshine.
+from offline_speech import (
+    MOONSHINE_STT_LANGS, WHISPER_STT_LANGS, MOONSHINE_TTS_LANG_MAP,
+    MOONSHINE_TTS_VOICE_MAP, OfflineSpeechError, WhisperCppRecognizer,
+    moonshine_stt_model, moonshine_tts_dir, new_fallback_tts,
+)
+
+# Existing languages use Moonshine; Persian/Urdu use local whisper.cpp.
 # Language is fixed at recognizer construction, so we lazily build (and cache) one
 # recognizer per language actually used.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SUPPORTED_STT_LANGS = {"en", "ar", "es", "ja", "zh", "ko"}
+SUPPORTED_STT_LANGS = MOONSHINE_STT_LANGS | WHISPER_STT_LANGS
 MAX_MODELS = 2
 _stt_recognizers = OrderedDict()  # language -> recognizer
 # RLock (reentrant): handle_stt holds the lock across get_stt_recognizer() + inference,
 # and get_stt_recognizer() re-acquires it on the same thread. A plain Lock() self-deadlocks.
 _stt_lock = threading.RLock()
 
-# Multilingual TTS via moonshine-voice (Kokoro / Piper backed). Language is fixed at
+# TTS uses Moonshine voices plus Persian Piper and Urdu eSpeak NG. Language is fixed at
 # TextToSpeech construction, so we lazily build (and cache) one engine per language used.
 # Maps our UI language codes -> moonshine-voice language codes.
-TTS_LANG_MAP = {
-    "ar": "ar-msa",
-    "en": "en-us",
-    "es": "es-es",
-    "ja": "ja-jp",
-    "zh": "zh-hans",
-    "ko": "ko-kr",
-}
+TTS_LANG_MAP = MOONSHINE_TTS_LANG_MAP
 # Optional per-language voice override (moonshine-voice voice IDs). Languages not
 # listed here use moonshine's default voice for that language.
-TTS_VOICE_MAP = {
-    "zh": "kokoro_zf_xiaoxiao",  # 晓晓 — soft, gentle female Mandarin
-}
+TTS_VOICE_MAP = MOONSHINE_TTS_VOICE_MAP
 _tts_engines = OrderedDict()  # our-lang-code -> TextToSpeech
 # RLock (reentrant): handle_tts holds the lock across get_tts_engine() + synthesis,
 # and get_tts_engine() re-acquires it on the same thread. A plain Lock() self-deadlocks.
 _tts_lock = threading.RLock()
 
 def get_tts_engine(language="en"):
-    if language not in TTS_LANG_MAP:
+    if language not in TTS_LANG_MAP and language not in WHISPER_STT_LANGS:
         language = "en"
     with _tts_lock:
         if language in _tts_engines:
             _tts_engines.move_to_end(language)
             return _tts_engines[language]
-        from moonshine_voice import TextToSpeech
-        moon_lang = TTS_LANG_MAP[language]
-        voice = TTS_VOICE_MAP.get(language)
-        print(f"[TTS] Loading moonshine-voice (lang={language} -> {moon_lang}, voice={voice or 'default'})...")
+        if language in WHISPER_STT_LANGS:
+            engine = new_fallback_tts(language)
+        else:
+            from moonshine_voice import TextToSpeech
+            moon_lang = TTS_LANG_MAP[language]
+            voice = TTS_VOICE_MAP.get(language)
+            print(f"[TTS] lang={language} engine=moonshine-voice voice={voice or 'default'}")
+            try:
+                engine = TextToSpeech(
+                    moon_lang, voice=voice, download=False, asset_root=moonshine_tts_dir(),
+                )
+            except Exception as exc:
+                raise OfflineSpeechError(
+                    f"Moonshine TTS assets for {language} are unavailable: {exc}. "
+                    "Run ./setup.sh while online to preload the offline voices."
+                ) from exc
         if len(_tts_engines) >= MAX_MODELS:
             oldest_lang, oldest_engine = _tts_engines.popitem(last=False)
             print(f"[TTS] Evicting model for {oldest_lang}")
             del oldest_engine
-        if voice:
-            _tts_engines[language] = TextToSpeech(moon_lang, voice=voice)
-        else:
-            _tts_engines[language] = TextToSpeech(moon_lang)
+        _tts_engines[language] = engine
         return _tts_engines[language]
 
 def get_stt_recognizer(language="en"):
@@ -90,20 +96,33 @@ def get_stt_recognizer(language="en"):
         if language in _stt_recognizers:
             _stt_recognizers.move_to_end(language)
             return _stt_recognizers[language]
-        from moonshine_voice import get_model_for_language, Transcriber
-        print(f"[STT] Loading Moonshine STT (lang={language})...")
+        if language in WHISPER_STT_LANGS:
+            recognizer = WhisperCppRecognizer(language)
+        else:
+            from moonshine_voice import ModelArch, Transcriber
+            print(f"[STT] lang={language} engine=moonshine-voice")
+            model_path, model_arch = moonshine_stt_model(language)
+            recognizer = Transcriber(model_path=model_path, model_arch=ModelArch(model_arch))
         if len(_stt_recognizers) >= MAX_MODELS:
             oldest_lang, oldest_recognizer = _stt_recognizers.popitem(last=False)
             print(f"[STT] Evicting model for {oldest_lang}")
             del oldest_recognizer
-        model_path, model_arch = get_model_for_language(language)
-        _stt_recognizers[language] = Transcriber(model_path=model_path, model_arch=model_arch)
+        _stt_recognizers[language] = recognizer
         return _stt_recognizers[language]
 
 
 PORT = 3000
 
 class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
+    def speech_error(self, error):
+        status = 503 if isinstance(error, OfflineSpeechError) else 500
+        if isinstance(error, ValueError):
+            status = 400
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": str(error)}, ensure_ascii=False).encode('utf-8'))
+
     def end_headers(self):
         # Add CORS headers
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -192,14 +211,14 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b'Error: Missing "text" parameter.')
             return
 
-        print(f"[TTS] Synthesizing with moonshine-voice: {text[:50]}... (lang: {lang})")
+        print(f"[TTS] Request lang={lang} chars={len(text)}")
 
         try:
             with _tts_lock:
                 engine = get_tts_engine(lang)
                 audio, sample_rate = engine.synthesize(text)
 
-            # moonshine-voice returns mono float samples in [-1, 1]; encode to 16-bit PCM WAV.
+            # All speech adapters return mono floats; encode the existing 16-bit PCM WAV API.
             samples = np.asarray(audio, dtype=np.float32)
             samples = np.clip(samples, -1.0, 1.0)
             pcm16 = (samples * 32767.0).astype('<i2')
@@ -220,9 +239,7 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             traceback.print_exc()
             print(f"[TTS Error] Exception: {e}")
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(str(e).encode('utf-8'))
+            self.speech_error(e)
 
     def handle_stt(self):
         try:
@@ -238,10 +255,12 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("Missing audio_base64 parameter")
 
             language = data.get('language', 'en')
-            raw_data = base64.b64decode(audio_b64)
+            raw_data = base64.b64decode(audio_b64, validate=True)
             
             # The browser sends a raw Float32Array buffer
-            audio_np = np.frombuffer(raw_data, dtype=np.float32)
+            audio_np = np.frombuffer(raw_data, dtype='<f4')
+            if not audio_np.size or not np.isfinite(audio_np).all():
+                raise ValueError("Audio must contain finite mono Float32 PCM samples")
 
             with _stt_lock:
                 recognizer = get_stt_recognizer(language)
@@ -256,9 +275,7 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             traceback.print_exc()
             print(f"[STT Error] Exception: {e}")
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(str(e).encode('utf-8'))
+            self.speech_error(e)
 
     def handle_volume(self):
         client_ip = self.client_address[0]

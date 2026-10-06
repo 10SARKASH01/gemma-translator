@@ -12,6 +12,7 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
 - **Voice Interface**: Captures microphone audio, processes it, and sends it to the local model.
 - **Optimized UI**: Retro-terminal styling custom-built for small hardware screens (like Raspberry Pi displays).
 - **Unified Startup**: One script to launch the LLM server, the Python API, and the React frontend.
+- **Persian and Urdu**: Offline voice input/output in either lane, with RTL text. Persian/Urdu STT uses multilingual whisper.cpp; Persian TTS uses Piper, and Urdu TTS uses eSpeak NG. Existing languages keep Moonshine.
 
 ## Prerequisites
 
@@ -41,6 +42,12 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
    ```bash
    ./setup.sh
    ```
+   On Raspberry Pi OS / Debian, setup also installs native speech dependencies,
+   builds whisper.cpp, downloads its multilingual model and the Persian Piper
+   voice, and preloads all six existing Moonshine languages for offline use.
+   Setup needs internet access; inference does not. See the
+   [Persian/Urdu setup and verification guide](docs/OFFLINE_LANGUAGES.md) for
+   custom paths, reuse of an existing Whisper model, and offline checks.
 
 3. **Download the Model**
    Run the model downloader script to fetch the `gemma4-e2b` model from Hugging Face and import it into LiteRT-LM:
@@ -72,6 +79,12 @@ To deploy as a permanent systemd kiosk service on a Raspberry Pi 5 (8GB):
 ./deploy-pi.sh
 ```
 This automated script installs Debian audio/venv packages, sets up the Python environment, builds production UI assets, downloads the LiteRT model, registers the systemd unit from `deploy/gemma-translator.service`, and configures LXDE GUI autostart (`~/.config/lxsession/rpd-x/autostart`) to launch Chromium in kiosk mode pointing to `http://localhost:3000`.
+
+For Persian/Urdu, no manual recording or extra runtime server is required.
+Select either language with the existing revolver keys and hold/release the
+normal recording key. Enable Speech Output in settings to hear the result.
+Copy `speech.env.example` to `speech.env` before setup if you need custom
+executable/model paths; the same settings are read by startup and systemd.
 
 ## Project Structure
 

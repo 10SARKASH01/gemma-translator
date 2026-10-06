@@ -23,3 +23,5 @@ server.log
 *.ogg
 *.flac
 coverage/
+models/offline-speech/
+speech.env

@@ -23,22 +23,14 @@ import {
   transcribeAudio,
   translateText,
   splitTextIntoSpeechChunks,
+  fetchSpeechAudio,
 } from "./utils/api"
 import { playBlip } from "./utils/audio-blip"
+import { AVAILABLE_LANGUAGES, buildTranslationPrompt } from "./utils/languages"
 
 // Core orchestrator for the two-person kiosk translator.
-// Flow: hold a key → record mic (useAudioRecorder) → POST /api/stt (Moonshine)
+// Flow: hold a key → record mic (useAudioRecorder) → POST /api/stt (local STT)
 // → LLM translation via /proxy (Gemma, strict-JSON prompt) → /api/tts playback.
-
-// Languages offered on each lane's revolver; ttsLang selects the backend voice.
-const AVAILABLE_LANGUAGES = [
-  { code: "ar", name: "Arabic", voice: "tts", ttsLang: "ar" },
-  { code: "en", name: "English", voice: "tts", ttsLang: "en" },
-  { code: "es", name: "Spanish", voice: "tts", ttsLang: "es" },
-  { code: "ja", name: "Japanese", voice: "tts", ttsLang: "ja" },
-  { code: "zh", name: "Chinese", voice: "tts", ttsLang: "zh" },
-  { code: "ko", name: "Korean", voice: "tts", ttsLang: "ko" },
-]
 
 function TranslatorApp({ config }) {
   // UI State
@@ -48,16 +40,21 @@ function TranslatorApp({ config }) {
   // Translation State
   const [transcriptionData, setTranscriptionData] = useState({
     source: "",
+    lang: "",
     text: "— listening —",
   })
   const [translationData, setTranslationData] = useState({
     target: "",
+    lang: "",
     text: "— waiting —",
   })
   const [metaText, setMetaText] = useState("")
 
   // Currently-playing TTS audio element (chunked playback chain)
   const onlineAudioPlayerRef = useRef(null)
+  const speechSessionRef = useRef(0)
+  const speechRequestRef = useRef(null)
+  const speechUrlRef = useRef(null)
 
   // Language Lanes State
   const [lang1Index, setLang1Index] = useState(0)
@@ -79,11 +76,22 @@ function TranslatorApp({ config }) {
   }, [micError])
 
   const stopSpeaking = useCallback(() => {
+    speechSessionRef.current++
+    speechRequestRef.current?.abort()
+    speechRequestRef.current = null
     if (onlineAudioPlayerRef.current) {
       onlineAudioPlayerRef.current.pause()
+      onlineAudioPlayerRef.current.onended = null
+      onlineAudioPlayerRef.current.onerror = null
       onlineAudioPlayerRef.current = null
     }
+    if (speechUrlRef.current) {
+      URL.revokeObjectURL(speechUrlRef.current)
+      speechUrlRef.current = null
+    }
   }, [])
+
+  useEffect(() => stopSpeaking, [stopSpeaking])
 
   // Speak text via /api/tts, splitting into ~180-char chunks and chaining
   // playback so long translations don't overflow a single TTS request.
@@ -91,34 +99,44 @@ function TranslatorApp({ config }) {
     (text, targetLang) => {
       if (!text) return
       stopSpeaking()
+      const session = speechSessionRef.current
 
       const chunks = splitTextIntoSpeechChunks(text)
       if (chunks.length === 0) return
 
       let chunkIndex = 0
 
-      const playNextChunk = () => {
+      const playNextChunk = async () => {
+        if (session !== speechSessionRef.current) return
         if (chunkIndex >= chunks.length) {
           stopSpeaking()
           return
         }
-        const ttsUrl = `/api/tts?text=${encodeURIComponent(chunks[chunkIndex])}&lang=${encodeURIComponent(targetLang)}`
-        const player = new Audio(ttsUrl)
-        player.volume = 1.0
-        onlineAudioPlayerRef.current = player
-
-        player.onended = () => {
-          chunkIndex++
-          playNextChunk()
-        }
-        player.onerror = () => {
+        try {
+          const controller = new AbortController()
+          speechRequestRef.current = controller
+          const blob = await fetchSpeechAudio(chunks[chunkIndex], targetLang, controller.signal)
+          if (session !== speechSessionRef.current) return
+          if (speechUrlRef.current) URL.revokeObjectURL(speechUrlRef.current)
+          speechUrlRef.current = URL.createObjectURL(blob)
+          const player = new Audio(speechUrlRef.current)
+          player.volume = 1.0
+          onlineAudioPlayerRef.current = player
+          player.onended = () => {
+            chunkIndex++
+            playNextChunk()
+          }
+          player.onerror = () => {
+            if (session !== speechSessionRef.current) return
+            stopSpeaking()
+            alert(`Could not play ${targetLang} speech audio.`)
+          }
+          await player.play()
+        } catch (err) {
+          if (session !== speechSessionRef.current || err.name === "AbortError") return
           stopSpeaking()
-          alert("TTS playback failed. Backend server may be offline.")
+          alert(`Speech output (${targetLang}): ${err.message}`)
         }
-        player.play().catch((e) => {
-          console.error("Audio play error:", e)
-          stopSpeaking()
-        })
       }
 
       playNextChunk()
@@ -196,10 +214,12 @@ function TranslatorApp({ config }) {
 
     setTranscriptionData({
       source: `${src.name} (Source)`,
+      lang: src.code,
       text: "Analyzing voice input...",
     })
     setTranslationData({
       target: `${dst.name} (Translation)`,
+      lang: dst.code,
       text: "Translating...",
     })
     setMetaText("")
@@ -222,7 +242,7 @@ function TranslatorApp({ config }) {
       const result = await translateText(transcribedText, {
         ...config,
         modelName: config.modelName,
-        systemPrompt: `You are a high-performance translator. Your task is to translate text from ${src.name.split(" ")[0]} into ${dst.name.split(" ")[0]}.\nYou MUST format your response as a valid JSON object matching this structure:\n{\n  "translation": "High-quality, natural translation into ${dst.name.split(" ")[0]}"\n}\nDo NOT return anything else except this JSON object. No Markdown block wraps (no \`\`\`json), no introductory text, no conversational text. Start directly with "{" and end directly with "}".`,
+        systemPrompt: buildTranslationPrompt(src, dst),
       })
 
       setTranslationData((prev) => ({ ...prev, text: result.translation }))
@@ -325,8 +345,10 @@ function TranslatorApp({ config }) {
         onClose={() => setIsDrawerOpen(false)}
         transcriptionSource={transcriptionData.source}
         transcriptionText={transcriptionData.text}
+        transcriptionLang={transcriptionData.lang}
         translationTarget={translationData.target}
         translationText={translationData.text}
+        translationLang={translationData.lang}
         metaText={metaText}
       />
 

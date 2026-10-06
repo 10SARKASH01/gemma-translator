@@ -15,6 +15,7 @@
  */
 
 import React from "react"
+import { textDirection } from "../utils/languages"
 
 // Result panel: transcription (left bubble) and translation (right bubble)
 // in a chat-style layout, with a first-run placeholder before any recording.
@@ -23,8 +24,10 @@ export default function ResponseDrawer({
   onClose,
   transcriptionSource,
   transcriptionText,
+  transcriptionLang,
   translationTarget,
   translationText,
+  translationLang,
   metaText,
   placeholderText,
 }) {
@@ -54,7 +57,7 @@ export default function ResponseDrawer({
                 <div className="bubble-label">
                   {transcriptionSource || "LANG 1"}
                 </div>
-                <div className="bubble-text">
+                <div className="bubble-text" lang={transcriptionLang} dir={textDirection(transcriptionLang)}>
                   {transcriptionText || "— listening —"}
                 </div>
               </div>
@@ -64,7 +67,7 @@ export default function ResponseDrawer({
                 <div className="bubble-label">
                   {translationTarget || "LANG 2"}
                 </div>
-                <div className="bubble-text">
+                <div className="bubble-text" lang={translationLang} dir={textDirection(translationLang)}>
                   {translationText || "— waiting —"}
                 </div>
               </div>

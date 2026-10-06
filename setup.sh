@@ -16,6 +16,22 @@
 set -e
 
 cd "$(dirname "$0")"
+if [ -f speech.env ]; then
+    set -a
+    source ./speech.env
+    set +a
+fi
+
+# Fresh Raspberry Pi OS / Debian installs include the native speech engines,
+# compiler and offline font coverage. Other platforms can provide these tools.
+if command -v apt-get >/dev/null 2>&1; then
+    APT_CMD=(apt-get)
+    if [ "$(id -u)" -ne 0 ]; then APT_CMD=(sudo apt-get); fi
+    "${APT_CMD[@]}" update
+    "${APT_CMD[@]}" install -y python3-venv python3-pip libportaudio2 libasound2-dev \
+        git cmake build-essential espeak-ng espeak-ng-data fonts-noto-core fonts-noto-cjk \
+        netcat-openbsd lsof
+fi
 
 echo "Creating virtual environment..."
 python3 -m venv venv
@@ -24,7 +40,11 @@ echo "Activating virtual environment..."
 source venv/bin/activate
 
 echo "Installing requirements..."
-pip install --require-hashes --extra-index-url https://pypi.org/simple/ -r backend/requirements.txt
+# This is a version-pinned requirements file, not a hash lockfile.
+pip install --extra-index-url https://pypi.org/simple/ -r backend/requirements.txt
+
+echo "Installing and preloading offline speech dependencies..."
+bash ./setup-offline-speech.sh
 
 echo "========================================="
 echo "Setup complete!"

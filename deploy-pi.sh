@@ -84,7 +84,7 @@ if [ -f "$TEMPLATE_FILE" ]; then
     sudo systemctl restart gemma-translator.service
 
     echo "[6/7] Configuring GUI kiosk autostart..."
-    LXSESSION_DIR="/home/${CURRENT_USER}/.config/lxsession/rpd-x"
+    LXSESSION_DIR="${HOME}/.config/lxsession/rpd-x"
     AUTOSTART_FILE="${LXSESSION_DIR}/autostart"
     if [ -d "$LXSESSION_DIR" ] || [ -f "/etc/xdg/lxsession/rpd-x/autostart" ]; then
         mkdir -p "$LXSESSION_DIR"

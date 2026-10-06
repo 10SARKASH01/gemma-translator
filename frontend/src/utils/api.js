@@ -50,7 +50,18 @@ export async function testConnectionAPI(endpointUrl, useProxy, apiKey) {
   return true
 }
 
-// POST base64 Float32 PCM (16 kHz mono) to the local Moonshine STT.
+async function speechError(response, operation) {
+  const body = await response.text()
+  let detail = body
+  try {
+    detail = JSON.parse(body).error || body
+  } catch {
+    // Older backends return a plain-text error body.
+  }
+  return new Error(`${operation} ${response.status}: ${detail || response.statusText}`)
+}
+
+// POST base64 Float32 PCM (16 kHz mono) to the selected local STT engine.
 export async function transcribeAudio(base64Data, sourceLangCode) {
   const response = await fetch("/api/stt", {
     method: "POST",
@@ -62,11 +73,20 @@ export async function transcribeAudio(base64Data, sourceLangCode) {
   })
 
   if (!response.ok) {
-    throw new Error(`STT failed: ${response.status}`)
+    throw await speechError(response, "STT failed")
   }
 
   const sttData = await response.json()
   return sttData.text || ""
+}
+
+// Fetch first so missing voice/model errors are visible instead of a generic
+// Audio element error. The backend still returns the same WAV API contract.
+export async function fetchSpeechAudio(text, targetLang, signal) {
+  const url = `/api/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(targetLang)}`
+  const response = await fetch(url, { signal })
+  if (!response.ok) throw await speechError(response, "TTS failed")
+  return response.blob()
 }
 
 function generatePayloadJSON(transcribedText, model, systemPrompt) {

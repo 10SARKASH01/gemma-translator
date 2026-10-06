@@ -42,9 +42,16 @@ LITERT_PORT=9379
 API_PORT=3000
 WEB_PORT=5173
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LITERT_CMD="${PROJECT_DIR}/venv/bin/litert-lm serve"
-API_CMD="${PROJECT_DIR}/venv/bin/python3 ${PROJECT_DIR}/backend/server.py"
-WEB_CMD="npm --prefix ${PROJECT_DIR}/frontend run dev"
+# Optional local speech settings also work under systemd. Exported settings
+# survive into the backend, and defaults are relative to this checkout.
+if [ -f "${PROJECT_DIR}/speech.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/speech.env"
+    set +a
+fi
+LITERT_CMD=("${PROJECT_DIR}/venv/bin/litert-lm" serve)
+API_CMD=("${PROJECT_DIR}/venv/bin/python3" "${PROJECT_DIR}/backend/server.py")
+WEB_CMD=(npm --prefix "${PROJECT_DIR}/frontend" run dev)
 
 CLEANING_UP=0
 cleanup() {
@@ -60,15 +67,7 @@ cleanup() {
 }
 trap cleanup EXIT TERM INT
 
-# Wait for network (max 15s) - simpler check for macOS/Linux
-echo "[start.sh] Waiting for network..."
-for i in $(seq 1 15); do
-    if ping -c 1 8.8.8.8 &> /dev/null; then
-        echo "[start.sh] Network ready."
-        break
-    fi
-    sleep 1
-done
+# Inference and speech assets are local after setup; no internet probe needed.
 
 # Check node_modules
 cd "${PROJECT_DIR}/frontend"
@@ -88,7 +87,7 @@ wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 || amixer sset Master 100% 2>/dev/null
 
 # Start litert-lm in background
 echo "[start.sh] Starting litert-lm..."
-$LITERT_CMD &
+"${LITERT_CMD[@]}" &
 LITERT_PID=$!
 
 # Wait for litert-lm to be ready (max 60s)
@@ -108,7 +107,7 @@ done
 
 # Start API server
 echo "[start.sh] Starting API server on port ${API_PORT}..."
-$API_CMD &
+"${API_CMD[@]}" &
 API_PID=$!
 
 if [ "$PROD_MODE" -eq 1 ]; then
@@ -120,7 +119,7 @@ if [ "$PROD_MODE" -eq 1 ]; then
 else
     # Start web UI server
     echo "[start.sh] Starting Web UI on port ${WEB_PORT}..."
-    $WEB_CMD &
+    "${WEB_CMD[@]}" &
     WEB_PID=$!
 
     echo "[start.sh] All services running."
