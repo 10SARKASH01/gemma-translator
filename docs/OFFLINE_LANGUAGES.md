@@ -147,6 +147,7 @@ Unit tests use fake native engines to verify PCM conversion, forced language fla
 
 - **Missing executable:** rerun setup, or correct WHISPER_CPP_BINARY/ESPEAK_NG_BINARY in speech.env.
 - **Missing/wrong Whisper model:** use a multilingual `ggml-*.bin`, not an English `.en` model or a GGUF model.
+- **Setup reports a missing `blobs/<hash>` model path:** an older downloader linked a relative Hugging Face cache symlink instead of its model data. Run `git pull --ff-only`, then rerun `./setup.sh` while online. The corrected downloader resolves the cache source and replaces broken model links in place; no manual deletion or Gemma re-download is required.
 - **Missing Persian voice:** rerun setup to download the ONNX/config pair; confirm custom model config uses `espeak.voice=fa`.
 - **No Urdu voice:** run `espeak-ng --voices=ur`; install Debian's espeak-ng and espeak-ng-data packages.
 - **Missing Moonshine manifest/voice assets:** rerun setup using the same OFFLINE_SPEECH_DIR as runtime. Old clones with only the Gemma model now need this one-time speech preload to work offline in every language.
@@ -160,5 +161,5 @@ The development host checks cover Python dependency resolution, ARM64 wheels for
 - Backend: `backend/server.py`, `backend/offline_speech.py`, `backend/setup_speech.py`, `backend/requirements.txt`.
 - Frontend: `frontend/src/TranslatorApp.jsx`, `frontend/src/components/ResponseDrawer.jsx`, `frontend/src/utils/languages.js`, `frontend/src/utils/api.js`, `frontend/style.css`, `frontend/package.json`.
 - Installation/startup: `setup.sh`, `setup-offline-speech.sh`, `start.sh`, `deploy-pi.sh`, `deploy/gemma-translator.service`, `speech.env.example`.
-- Tests: `backend/tests/test_offline_speech.py`, `frontend/tests/languages.test.js`, `frontend/tests/rtl.test.js`.
+- Tests: `backend/tests/test_offline_speech.py`, `backend/tests/test_setup_downloads.py`, `frontend/tests/languages.test.js`, `frontend/tests/rtl.test.js`.
 - Documentation/checkout configuration: `README.md`, this guide, `.gitignore`, `.gitattributes`. Shell files now retain Unix line endings on Windows checkouts. The earlier `docs/PROJECT_ANALYSIS.md` remains available for the original repository architecture.

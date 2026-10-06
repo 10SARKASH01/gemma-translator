@@ -25,10 +25,12 @@ def download_model_file(repo, filename, destination, revision="main"):
     cached = Path(hf_hub_download(
         repo_id=repo, filename=filename, revision=revision,
         cache_dir=str(speech_dir() / ".download-cache"),
-    ))
+    )).resolve(strict=True)
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Keep HF's download verification/cache while avoiding a duplicate model
     # allocation on the Pi when the destination is on the same filesystem.
+    # HF snapshot paths are relative symlinks into its blobs directory. Link
+    # the resolved data file, never the symlink (which breaks at our destination).
     temporary = destination.with_name(destination.name + ".part")
     temporary.unlink(missing_ok=True)
     try:
@@ -42,9 +44,11 @@ def setup_speech():
     from moonshine_voice import get_model_for_language, download_tts_assets, TextToSpeech
     root = speech_dir()
     root.mkdir(parents=True, exist_ok=True)
+    # Keep destination names intact so rerunning setup can replace broken
+    # symlinks left by an older downloader, rather than following their targets.
     whisper_model = Path(os.environ.get(
         "WHISPER_MODEL_PATH", root / "whisper" / "ggml-small-q5_1.bin",
-    )).expanduser().resolve()
+    )).expanduser().absolute()
     if "WHISPER_MODEL_PATH" in os.environ and not whisper_model.is_file():
         raise RuntimeError(
             f"WHISPER_MODEL_PATH does not exist: {whisper_model}. Point it to an "
@@ -59,8 +63,8 @@ def setup_speech():
     if os.environ.get("PERSIAN_TTS_ENGINE", "piper") == "piper":
         model = Path(os.environ.get(
             "PIPER_FA_MODEL", root / "piper" / "fa_IR-amir-medium.onnx",
-        )).expanduser().resolve()
-        config = Path(os.environ.get("PIPER_FA_CONFIG", str(model) + ".json")).expanduser().resolve()
+        )).expanduser().absolute()
+        config = Path(os.environ.get("PIPER_FA_CONFIG", str(model) + ".json")).expanduser().absolute()
         if "PIPER_FA_MODEL" in os.environ or "PIPER_FA_CONFIG" in os.environ:
             if not model.is_file() or not config.is_file():
                 raise RuntimeError("Custom PIPER_FA_MODEL/PIPER_FA_CONFIG must both exist.")

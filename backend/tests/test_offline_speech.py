@@ -246,6 +246,38 @@ class OfflineSpeechTests(unittest.TestCase):
         for call in self.moon.TextToSpeech.call_args_list:
             self.assertFalse(call.kwargs["download"])
 
+    def test_setup_keeps_default_destination_names_when_previous_links_are_broken(self):
+        whisper_path = self.root / "whisper" / "ggml-small-q5_1.bin"
+        piper_path = self.root / "piper" / "fa_IR-amir-medium.onnx"
+        config_path = self.root / "piper" / "fa_IR-amir-medium.onnx.json"
+        broken_paths = {whisper_path, piper_path, config_path}
+        original_resolve = Path.resolve
+
+        def resolve_without_following_broken_destinations(path, *args, **kwargs):
+            if path in broken_paths:
+                raise AssertionError("Setup must replace a broken destination, not resolve its target")
+            return original_resolve(path, *args, **kwargs)
+
+        self.moon.get_model_for_language = Mock(side_effect=lambda lang, **kwargs: (
+            str(self.root / lang), SimpleNamespace(value=0),
+        ))
+        self.moon.download_tts_assets = Mock()
+        self.moon.TextToSpeech.return_value = SimpleNamespace(close=Mock())
+        fallback = SimpleNamespace(
+            engine_name="local-test", synthesize=Mock(return_value=(np.ones(100), 22050)),
+        )
+        with patch.dict(os.environ, {"OFFLINE_SPEECH_DIR": str(self.root)}, clear=True), \
+             patch("pathlib.Path.resolve", new=resolve_without_following_broken_destinations), \
+             patch("setup_speech.download_model_file") as download, \
+             patch("setup_speech.WhisperCppRecognizer", return_value=SimpleNamespace(binary="whisper-cli")), \
+             patch("setup_speech.run_speech_command"), \
+             patch("setup_speech.new_fallback_tts", return_value=fallback):
+            setup_speech.setup_speech()
+        self.assertEqual([call.args[2] for call in download.call_args_list], [
+            whisper_path, piper_path, config_path, piper_path.parent / "MODEL_CARD",
+        ])
+        self.assertEqual(download.call_args_list[1].args[1], "fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx")
+
     def test_invalid_audio_is_400(self):
         for audio in [np.array([float("nan")], dtype="<f4").tobytes(), b"bad"]:
             handler = self.handler("/api/stt", {"audio_base64": base64.b64encode(audio).decode(), "language": "fa"})
