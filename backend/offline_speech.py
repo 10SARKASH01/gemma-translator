@@ -25,6 +25,7 @@ MOONSHINE_TTS_LANG_MAP = {
     "ja": "ja-jp", "zh": "zh-hans", "ko": "ko-kr",
 }
 MOONSHINE_TTS_VOICE_MAP = {"zh": "kokoro_zf_xiaoxiao"}
+_warned_whisper_cli = False
 
 
 class OfflineSpeechError(RuntimeError):
@@ -102,10 +103,28 @@ class WhisperCppRecognizer:
         if language not in WHISPER_STT_LANGS:
             raise ValueError(f"Whisper fallback does not handle {language}")
         self.language = language
-        self.binary = executable(
-            "WHISPER_CPP_BINARY",
-            speech_dir() / "whisper.cpp" / "build" / "bin" / "whisper-cli",
+        mode = os.environ.get("WHISPER_MODE", "auto").lower()
+        if mode not in {"auto", "server", "cli"}:
+            raise OfflineSpeechError("WHISPER_MODE must be auto, server or cli.")
+        server_default = speech_dir() / "whisper.cpp" / "build" / "bin" / "whisper-server"
+        server_requested = os.environ.get("WHISPER_SERVER_BINARY", str(server_default))
+        server_binary = shutil.which(os.path.expanduser(server_requested)) if mode != "cli" else None
+        if mode == "server" and not server_binary:
+            executable("WHISPER_SERVER_BINARY", server_default)
+        self.mode = "server" if server_binary else "cli"
+        self.binary = server_binary or executable(
+            "WHISPER_CPP_BINARY", speech_dir() / "whisper.cpp" / "build" / "bin" / "whisper-cli",
         )
+        if mode == "auto" and self.mode == "cli":
+            global _warned_whisper_cli
+            if not _warned_whisper_cli:
+                print(
+                    "[STT] whisper-server unavailable; using whisper-cli. Run ./setup.sh "
+                    "to keep the multilingual model loaded between requests.", flush=True,
+                )
+                _warned_whisper_cli = True
+        if self.mode == "server":
+            self.engine_name = "whisper.cpp/server"
         self.model = Path(os.environ.get(
             "WHISPER_MODEL_PATH", speech_dir() / "whisper" / "ggml-small-q5_1.bin",
         )).expanduser().resolve()
@@ -124,12 +143,31 @@ class WhisperCppRecognizer:
         self.threads = positive_int("WHISPER_THREADS", 4)
         self.timeout = positive_int("SPEECH_TIMEOUT_SECONDS", 300)
 
+    def _server(self):
+        from whisper_server import get_whisper_server
+        return get_whisper_server(self.binary, self.model, self.threads, self.timeout)
+
+    def warmup(self):
+        if self.mode == "server":
+            self._server().warmup()
+
     def transcribe_without_streaming(self, audio, sample_rate):
         if sample_rate != 16000:
             raise ValueError("whisper.cpp input must be 16 kHz mono")
         samples = np.asarray(audio, dtype=np.float32)
         if samples.ndim != 1 or not samples.size or not np.isfinite(samples).all():
             raise ValueError("Audio must contain finite mono Float32 PCM samples")
+        print(f"[STT] lang={self.language} engine={self.engine_name}", flush=True)
+        if self.mode == "server":
+            with io.BytesIO() as buffer:
+                with wave.open(buffer, "wb") as wav_file:
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2)
+                    wav_file.setframerate(16000)
+                    pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
+                    wav_file.writeframes(pcm.tobytes())
+                text = self._server().transcribe(buffer.getvalue(), self.language)
+            return SimpleNamespace(lines=[SimpleNamespace(text=text)])
         # Conversion is automatic: the browser still sends the existing PCM API
         # payload. Temporary recordings and transcripts are deleted after use.
         with tempfile.TemporaryDirectory(prefix="gemma-whisper-") as temp_dir:
@@ -141,7 +179,6 @@ class WhisperCppRecognizer:
                 wav_file.setframerate(16000)
                 pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
                 wav_file.writeframes(pcm.tobytes())
-            print(f"[STT] lang={self.language} engine={self.engine_name}", flush=True)
             run_speech_command([
                 self.binary, "-m", str(self.model), "-f", str(wav_path),
                 "-l", self.language, "-t", str(self.threads), "-ng",
@@ -154,6 +191,11 @@ class WhisperCppRecognizer:
                     "whisper.cpp produced no transcript file. Check its CLI version/model."
                 ) from exc
         return SimpleNamespace(lines=[SimpleNamespace(text=text)])
+
+
+def close_whisper_server(shutdown=False):
+    from whisper_server import close_whisper_server as close_worker
+    close_worker(shutdown=shutdown)
 
 
 def read_pcm_wav(wav_bytes):

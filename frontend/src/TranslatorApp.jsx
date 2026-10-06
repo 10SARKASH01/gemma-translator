@@ -22,11 +22,11 @@ import { useAudioRecorder } from "./hooks/useAudioRecorder"
 import {
   transcribeAudio,
   translateText,
-  splitTextIntoSpeechChunks,
   fetchSpeechAudio,
 } from "./utils/api"
 import { playBlip } from "./utils/audio-blip"
 import { AVAILABLE_LANGUAGES, buildTranslationPrompt } from "./utils/languages"
+import { createSpeechPlayer } from "./utils/speech-player"
 
 // Core orchestrator for the two-person kiosk translator.
 // Flow: hold a key → record mic (useAudioRecorder) → POST /api/stt (local STT)
@@ -50,11 +50,8 @@ function TranslatorApp({ config }) {
   })
   const [metaText, setMetaText] = useState("")
 
-  // Currently-playing TTS audio element (chunked playback chain)
-  const onlineAudioPlayerRef = useRef(null)
-  const speechSessionRef = useRef(0)
-  const speechRequestRef = useRef(null)
-  const speechUrlRef = useRef(null)
+  const speechPlayerRef = useRef(null)
+  const translationSessionRef = useRef(0)
 
   // Language Lanes State
   const [lang1Index, setLang1Index] = useState(0)
@@ -76,72 +73,26 @@ function TranslatorApp({ config }) {
   }, [micError])
 
   const stopSpeaking = useCallback(() => {
-    speechSessionRef.current++
-    speechRequestRef.current?.abort()
-    speechRequestRef.current = null
-    if (onlineAudioPlayerRef.current) {
-      onlineAudioPlayerRef.current.pause()
-      onlineAudioPlayerRef.current.onended = null
-      onlineAudioPlayerRef.current.onerror = null
-      onlineAudioPlayerRef.current = null
-    }
-    if (speechUrlRef.current) {
-      URL.revokeObjectURL(speechUrlRef.current)
-      speechUrlRef.current = null
-    }
+    speechPlayerRef.current?.stop()
   }, [])
 
-  useEffect(() => stopSpeaking, [stopSpeaking])
+  useEffect(() => () => {
+    translationSessionRef.current++
+    stopSpeaking()
+  }, [stopSpeaking])
 
-  // Speak text via /api/tts, splitting into ~180-char chunks and chaining
-  // playback so long translations don't overflow a single TTS request.
+  // Begin with a shorter phrase and prepare one following chunk during playback.
   const playTTS = useCallback(
-    (text, targetLang) => {
-      if (!text) return
-      stopSpeaking()
-      const session = speechSessionRef.current
-
-      const chunks = splitTextIntoSpeechChunks(text)
-      if (chunks.length === 0) return
-
-      let chunkIndex = 0
-
-      const playNextChunk = async () => {
-        if (session !== speechSessionRef.current) return
-        if (chunkIndex >= chunks.length) {
-          stopSpeaking()
-          return
-        }
-        try {
-          const controller = new AbortController()
-          speechRequestRef.current = controller
-          const blob = await fetchSpeechAudio(chunks[chunkIndex], targetLang, controller.signal)
-          if (session !== speechSessionRef.current) return
-          if (speechUrlRef.current) URL.revokeObjectURL(speechUrlRef.current)
-          speechUrlRef.current = URL.createObjectURL(blob)
-          const player = new Audio(speechUrlRef.current)
-          player.volume = 1.0
-          onlineAudioPlayerRef.current = player
-          player.onended = () => {
-            chunkIndex++
-            playNextChunk()
-          }
-          player.onerror = () => {
-            if (session !== speechSessionRef.current) return
-            stopSpeaking()
-            alert(`Could not play ${targetLang} speech audio.`)
-          }
-          await player.play()
-        } catch (err) {
-          if (session !== speechSessionRef.current || err.name === "AbortError") return
-          stopSpeaking()
-          alert(`Speech output (${targetLang}): ${err.message}`)
-        }
+    (text, targetLang, onFirstAudio) => {
+      if (!speechPlayerRef.current) {
+        speechPlayerRef.current = createSpeechPlayer({ fetchAudio: fetchSpeechAudio })
       }
-
-      playNextChunk()
+      speechPlayerRef.current.play(text, targetLang, {
+        onFirstAudio,
+        onError: (error) => alert(`Speech output (${targetLang}): ${error.message}`),
+      })
     },
-    [stopSpeaking],
+    [],
   )
 
   // Rotate a lane's language, skipping the slot held by the other lane
@@ -170,6 +121,7 @@ function TranslatorApp({ config }) {
   const handleRecordStart = useCallback(
     async (lane) => {
       if (isRecording) return
+      translationSessionRef.current++
       stopSpeaking()
 
       setActivePerson((prev) => {
@@ -201,6 +153,7 @@ function TranslatorApp({ config }) {
 
   // Translation Pipeline
   const processTranslation = async (lane, base64Data) => {
+    const session = ++translationSessionRef.current
     setIsDrawerOpen(true)
 
     const src =
@@ -227,7 +180,11 @@ function TranslatorApp({ config }) {
     try {
       // 1. Transcription
       setTranscriptionData((prev) => ({ ...prev, text: "Listening..." }))
+      const sttStarted = performance.now()
       const transcribedText = await transcribeAudio(base64Data, src.code)
+      if (session !== translationSessionRef.current) return
+      const sttDuration = ((performance.now() - sttStarted) / 1000).toFixed(2)
+      setMetaText(`STT: ${sttDuration}s`)
       setTranscriptionData((prev) => ({ ...prev, text: transcribedText }))
 
       if (!transcribedText.trim()) {
@@ -244,14 +201,21 @@ function TranslatorApp({ config }) {
         modelName: config.modelName,
         systemPrompt: buildTranslationPrompt(src, dst),
       })
+      if (session !== translationSessionRef.current) return
 
       setTranslationData((prev) => ({ ...prev, text: result.translation }))
-      setMetaText(`Duration: ${result.duration}s | Tokens: ${result.tokens}`)
+      const timings = `STT: ${sttDuration}s | Gemma: ${result.duration}s`
+      const tokens = result.tokens == null ? "" : ` | Tokens: ${result.tokens}`
+      setMetaText(`${timings}${tokens}`)
 
       if (config.enableTts) {
-        playTTS(result.translation, dst.ttsLang)
+        playTTS(result.translation, dst.ttsLang, (milliseconds) => {
+          if (session !== translationSessionRef.current) return
+          setMetaText(`${timings} | Speech ready: ${(milliseconds / 1000).toFixed(2)}s${tokens}`)
+        })
       }
     } catch (err) {
+      if (session !== translationSessionRef.current) return
       console.error(err)
       setTranscriptionData((prev) => ({
         ...prev,

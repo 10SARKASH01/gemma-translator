@@ -4,11 +4,11 @@
 
 | Language | Speech recognition | Speech output | Text direction |
 | --- | --- | --- | --- |
-| Persian (`fa`) | Multilingual whisper.cpp, forced `-l fa` | Piper `fa_IR-amir-medium` by default | RTL |
-| Urdu (`ur`) | Same multilingual whisper.cpp model, forced `-l ur` | eSpeak NG's `ur` voice | RTL |
+| Persian (`fa`) | Shared multilingual whisper.cpp server, explicit `fa` | Piper `fa_IR-amir-medium` by default | RTL |
+| Urdu (`ur`) | Same resident Whisper model, explicit `ur` | eSpeak NG's `ur` voice | RTL |
 | Arabic, English, Spanish, Japanese, Chinese, Korean | Existing Moonshine recognizers | Existing Moonshine voices, including the Chinese override | Arabic RTL; others LTR |
 
-All eight languages use the existing push-to-talk capture and local Gemma/LiteRT-LM translation service. Either lane can be the source or destination. The frontend sends the selected source code in `POST /api/stt` and the destination code in `GET /api/tts`. Transcription responses remain `{"text":"..."}`; speech responses remain mono 16-bit PCM WAV. The backend automatically converts the browser's raw 16 kHz Float32 PCM into a temporary WAV for whisper.cpp and deletes it afterward. Whisper transcription is not run with its English-translation flag; Gemma still performs translation.
+All eight languages use the existing push-to-talk capture and local Gemma/LiteRT-LM translation service. Either lane can be the source or destination. The frontend sends the selected source code in `POST /api/stt` and the destination code in `GET /api/tts`. Transcription responses remain `{"text":"..."}`; speech responses remain mono 16-bit PCM WAV. The backend automatically converts browser Float32 PCM into a 16 kHz WAV in memory for the persistent Whisper server. Optional CLI mode uses a temporary WAV and deletes it afterward. Whisper performs transcription; Gemma still performs translation. See [performance configuration and measurement](PERFORMANCE.md) for the resident worker, startup warmup, and speech prefetch.
 
 ```mermaid
 flowchart TD
@@ -54,7 +54,7 @@ No separate Persian/Urdu download command is needed. Deployment invokes `setup.s
 
 1. Installs Debian dependencies including compiler/CMake/Git, eSpeak NG and its language data, PortAudio/ALSA libraries, and offline Arabic-script/CJK fonts.
 2. Creates the Python venv and installs requirements, including Piper.
-3. Builds CPU-only whisper.cpp `v1.8.3` (unless a configured executable already exists).
+3. Builds CPU-only whisper.cpp `v1.8.3` CLI and server (unless both configured executables already exist).
 4. Downloads a multilingual `ggml-small-q5_1.bin` model, shared by Persian/Urdu.
 5. Downloads the Persian Piper ONNX/config/model card from a pinned catalog revision.
 6. Synthesizes Persian/Urdu setup checks and downloads STT/TTS assets for all six existing Moonshine languages.
@@ -85,6 +85,8 @@ Copy `speech.env.example` to `speech.env` **before setup** to persist overrides.
 | --- | --- |
 | `OFFLINE_SPEECH_DIR` | `<project>/models/offline-speech`; parent for all speech assets and the Moonshine manifest. |
 | `WHISPER_CPP_BINARY` | `<speech dir>/whisper.cpp/build/bin/whisper-cli`; may also be an executable name on PATH. |
+| `WHISPER_SERVER_BINARY` | `<speech dir>/whisper.cpp/build/bin/whisper-server`; persistent multilingual worker. |
+| `WHISPER_MODE` | `auto` prefers the installed server; `server` requires it; `cli` releases memory per utterance. |
 | `WHISPER_MODEL_PATH` | `<speech dir>/whisper/ggml-small-q5_1.bin`; set to an existing multilingual GGML model to reuse it. |
 | `WHISPER_THREADS` | 4 CPU threads. |
 | `WHISPER_BUILD_JOBS` | 2 compile jobs during setup. |
@@ -93,10 +95,14 @@ Copy `speech.env.example` to `speech.env` **before setup** to persist overrides.
 | `PIPER_FA_MODEL` | `<speech dir>/piper/fa_IR-amir-medium.onnx`. |
 | `PIPER_FA_CONFIG` | Model path plus `.json`; must describe a Persian `fa` phonemizer. |
 | `ESPEAK_NG_BINARY` | `espeak-ng` on PATH. |
+| `SPEECH_PREWARM_LANGUAGES` | `ar,en`; at most two codes to preload at startup, or empty to disable. |
+| `GEMMA_WARMUP` | `1`; one small local startup completion, `0` to skip. |
+| `GEMMA_MODEL_NAME` | `gemma4-e2b`; must match the model used in Settings. |
+| `GEMMA_WARMUP_TIMEOUT_SECONDS` | `120`; startup completion timeout. |
 
 Custom Whisper model paths must already exist; unset the override to use the automated download. English-only `.en` models and non-GGML formats are rejected using the model header. Custom Piper paths must include both a local ONNX model and matching config. No user home directory is hard-coded.
 
-Whisper runs as a CPU subprocess per utterance, releasing its model memory afterward; it does not leave a second resident model server alongside Gemma. The existing STT/TTS locks serialize same-type requests and the two-entry engine caches remain bounded. Larger Whisper models may improve recognition but cost memory and latency. Timing and linguistic accuracy should be evaluated on the actual Pi; multilingual small-model accuracy, especially Urdu, is not guaranteed for every accent or noisy environment.
+Whisper normally keeps one multilingual model loaded in a local CPU subprocess shared by Persian/Urdu. Explicit CLI mode releases it after each utterance. The existing STT/TTS locks serialize same-type requests and two-entry engine caches remain bounded. Larger Whisper models may improve recognition but cost memory and latency. Evaluate whole-app RAM, timing, and linguistic accuracy on the Pi; small-model accuracy, especially Urdu, is not guaranteed for every accent or noisy environment.
 
 On a non-Debian platform, provide Python/venv, a C++ toolchain/Git/CMake, and eSpeak NG yourself, or configure existing binaries. The automated apt/systemd path targets Raspberry Pi OS; it is not a native Windows deployment script.
 
@@ -115,8 +121,8 @@ Labels remain English/LTR; only Arabic/Persian/Urdu speech text receives RTL dir
 Check engine logs with `journalctl -u gemma-translator.service -f`, or the launch terminal:
 
 ```text
-[STT] lang=fa engine=whisper.cpp
-[STT] lang=ur engine=whisper.cpp
+[STT] lang=fa engine=whisper.cpp/server
+[STT] lang=ur engine=whisper.cpp/server
 [TTS] lang=fa engine=piper
 [TTS] lang=ur engine=espeak-ng
 ```
@@ -158,8 +164,8 @@ The development host checks cover Python dependency resolution, ARM64 wheels for
 
 ## Changed files
 
-- Backend: `backend/server.py`, `backend/offline_speech.py`, `backend/setup_speech.py`, `backend/requirements.txt`.
-- Frontend: `frontend/src/TranslatorApp.jsx`, `frontend/src/components/ResponseDrawer.jsx`, `frontend/src/utils/languages.js`, `frontend/src/utils/api.js`, `frontend/style.css`, `frontend/package.json`.
+- Backend: `backend/server.py`, `backend/offline_speech.py`, `backend/whisper_server.py`, `backend/setup_speech.py`, `backend/warmup.py`, `backend/requirements.txt`.
+- Frontend: `frontend/src/TranslatorApp.jsx`, `frontend/src/components/ResponseDrawer.jsx`, `frontend/src/utils/languages.js`, `frontend/src/utils/api.js`, `frontend/src/utils/speech-player.js`, `frontend/style.css`, `frontend/package.json`.
 - Installation/startup: `setup.sh`, `setup-offline-speech.sh`, `start.sh`, `deploy-pi.sh`, `deploy/gemma-translator.service`, `speech.env.example`.
-- Tests: `backend/tests/test_offline_speech.py`, `backend/tests/test_setup_downloads.py`, `frontend/tests/languages.test.js`, `frontend/tests/rtl.test.js`.
+- Tests: `backend/tests/test_offline_speech.py`, `backend/tests/test_setup_downloads.py`, `backend/tests/test_whisper_server.py`, `backend/tests/test_warmup.py`, `frontend/tests/languages.test.js`, `frontend/tests/rtl.test.js`, `frontend/tests/translation.test.js`, `frontend/tests/speech-player.test.js`.
 - Documentation/checkout configuration: `README.md`, this guide, `.gitignore`, `.gitattributes`. Shell files now retain Unix line endings on Windows checkouts. The earlier `docs/PROJECT_ANALYSIS.md` remains available for the original repository architecture.

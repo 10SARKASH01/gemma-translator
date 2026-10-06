@@ -27,7 +27,11 @@ test("every directed language pair reaches local Gemma with the correct names", 
           assert.equal(decodeURIComponent(url), "/proxy?url=http://localhost:9379/v1/chat/completions")
           const payload = JSON.parse(options.body)
           assert.equal(payload.model, "gemma4-e2b")
+          assert.equal(payload.temperature, 0)
+          assert.deepEqual(Object.keys(payload).sort(), ["messages", "model", "temperature"])
           assert.match(payload.messages[0].content, new RegExp(`from ${source.name} into ${target.name}`))
+          assert.match(payload.messages[0].content, /Return only valid JSON: \{"translation":"translated text"\}/)
+          assert.ok(payload.messages[0].content.length < 200)
           assert.equal(payload.messages[1].content, "recognized speech")
           return new Response(JSON.stringify({choices: [{message: {content: '{"translation":"translated speech"}'}}]}))
         }
@@ -36,6 +40,7 @@ test("every directed language pair reaches local Gemma with the correct names", 
           systemPrompt: buildTranslationPrompt(source, target),
         })
         assert.equal(result.translation, "translated speech")
+        assert.equal(result.tokens, null)
       }
     }
   } finally {

@@ -13,7 +13,7 @@ import shutil
 from offline_speech import (
     MOONSHINE_STT_LANGS, MOONSHINE_TTS_LANG_MAP, MOONSHINE_TTS_VOICE_MAP,
     WhisperCppRecognizer, moonshine_tts_dir, new_fallback_tts,
-    run_speech_command, speech_dir,
+    executable, run_speech_command, speech_dir,
 )
 
 
@@ -57,8 +57,12 @@ def setup_speech():
     download_model_file(
         "ggerganov/whisper.cpp", "ggml-small-q5_1.bin", whisper_model,
     )
-    whisper = WhisperCppRecognizer("fa")
-    run_speech_command([whisper.binary, "--help"], timeout=30)
+    WhisperCppRecognizer("fa")  # Validate the multilingual model and runtime mode.
+    for setting, name in [
+        ("WHISPER_CPP_BINARY", "whisper-cli"), ("WHISPER_SERVER_BINARY", "whisper-server"),
+    ]:
+        binary = executable(setting, root / "whisper.cpp" / "build" / "bin" / name)
+        run_speech_command([binary, "--help"], timeout=30)
 
     if os.environ.get("PERSIAN_TTS_ENGINE", "piper") == "piper":
         model = Path(os.environ.get(

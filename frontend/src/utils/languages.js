@@ -22,5 +22,5 @@ export function textDirection(languageCode) {
 }
 
 export function buildTranslationPrompt(source, target) {
-  return `You are a high-performance translator. Your task is to translate text from ${source.name} into ${target.name}.\nYou MUST format your response as a valid JSON object matching this structure:\n{\n  "translation": "High-quality, natural translation into ${target.name}"\n}\nDo NOT return anything else except this JSON object. No Markdown block wraps (no \`\`\`json), no introductory text, no conversational text. Start directly with "{" and end directly with "}".`
+  return `Translate from ${source.name} into ${target.name}. Preserve meaning and names. Return only valid JSON: {"translation":"translated text"}. No explanations or Markdown.`
 }

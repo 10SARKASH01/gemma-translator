@@ -13,6 +13,7 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
 - **Optimized UI**: Retro-terminal styling custom-built for small hardware screens (like Raspberry Pi displays).
 - **Unified Startup**: One script to launch the LLM server, the Python API, and the React frontend.
 - **Persian and Urdu**: Offline voice input/output in either lane, with RTL text. Persian/Urdu STT uses multilingual whisper.cpp; Persian TTS uses Piper, and Urdu TTS uses eSpeak NG. Existing languages keep Moonshine.
+- **Pipeline performance**: A shared resident Whisper model, shorter Gemma prompt, startup warmup, and speech chunk prefetch reduce repeated work. See [configuration and stage timings](docs/PERFORMANCE.md).
 
 ## Prerequisites
 
@@ -105,7 +106,7 @@ The app has two lanes (two people facing each other on the kiosk):
 - **Lane 1 / Person 1** — the left/top lane.
 - **Lane 2 / Person 2** — the right/bottom lane.
 
-Each lane has a rotating language "revolver" and records speech, which is transcribed (Moonshine STT), translated (Gemma), and spoken back in the other lane's language (moonshine-voice TTS).
+Each lane has a rotating language "revolver" and records speech, which is transcribed locally (Moonshine or Whisper), translated by Gemma, and spoken in the other lane's language using the corresponding local voice.
 
 ### Landscape Mode (default) — "active person"
 One lane is the **active person** at a time. The active lane is framed with **corner brackets on all four corners**. You drive everything from a single set of keys and switch focus with Space.

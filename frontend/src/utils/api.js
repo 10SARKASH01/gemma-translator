@@ -99,7 +99,9 @@ function generatePayloadJSON(transcribedText, model, systemPrompt) {
     content: transcribedText,
   })
 
-  return JSON.stringify({ model: model || "gemma4-e2b", messages })
+  // The pinned LiteRT-LM API supports temperature. Greedy decoding avoids
+  // sampling variation without adding unsupported completion-limit fields.
+  return JSON.stringify({ model: model || "gemma4-e2b", messages, temperature: 0 })
 }
 
 // Chat-completions request. The system prompt demands a bare
@@ -119,14 +121,13 @@ export async function translateText(transcribedText, config) {
   const fetchUrl = useProxy
     ? `/proxy?url=${encodeURIComponent(targetUrl)}`
     : targetUrl
-  const startRequestTime = Date.now()
+  const startRequestTime = performance.now()
 
   const response = await fetch(fetchUrl, {
     method: "POST",
     headers,
     body: payload,
   })
-  const requestDuration = ((Date.now() - startRequestTime) / 1000).toFixed(2)
 
   if (!response.ok) {
     const errorText = await response.text()
@@ -163,10 +164,13 @@ export async function translateText(transcribedText, config) {
     translationVal = modelResponse
   }
 
+  // Include the complete response body and parsing, not just response headers.
+  const requestDuration = ((performance.now() - startRequestTime) / 1000).toFixed(2)
+  const totalTokens = data.usage?.total_tokens
   return {
     translation: translationVal,
     duration: requestDuration,
-    tokens: data.usage?.total_tokens || 0,
+    tokens: Number.isFinite(totalTokens) && totalTokens >= 0 ? totalTokens : null,
   }
 }
 

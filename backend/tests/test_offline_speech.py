@@ -45,6 +45,7 @@ class OfflineSpeechTests(unittest.TestCase):
             "PIPER_FA_CONFIG": str(self.root / "fa.onnx.json"),
             "PERSIAN_TTS_ENGINE": "piper",
             "WHISPER_THREADS": "4", "SPEECH_TIMEOUT_SECONDS": "30",
+            "WHISPER_MODE": "cli",
         })
         self.env.start()
         (self.root / "whisper.bin").write_bytes(struct.pack("<II", 0x67676D6C, 51865))
@@ -94,6 +95,10 @@ class OfflineSpeechTests(unittest.TestCase):
         self.assertEqual(rate, 22050)
         self.assertEqual(len(samples), 4)
         self.assertGreater(float(np.abs(samples).max()), 0)
+        timings = [call.args[1] for call in handler.send_header.call_args_list
+                   if call.args[0] == "Server-Timing"]
+        self.assertEqual(len(timings), 1)
+        self.assertIn("tts-inference;dur=", timings[0])
 
     def test_both_languages_use_whisper_and_existing_pcm_api(self):
         pcm = np.array([0, 0.5, -0.5, 1.5], dtype="<f4")
@@ -233,6 +238,7 @@ class OfflineSpeechTests(unittest.TestCase):
             engine_name="local-test", synthesize=Mock(return_value=(np.ones(100), 22050)),
         )
         with patch("setup_speech.WhisperCppRecognizer", return_value=SimpleNamespace(binary="whisper-cli")), \
+             patch("setup_speech.executable", side_effect=lambda env, default: str(default)), \
              patch("setup_speech.run_speech_command"), \
              patch("setup_speech.new_fallback_tts", return_value=fallback) as get_voice:
             setup_speech.setup_speech()
@@ -270,6 +276,7 @@ class OfflineSpeechTests(unittest.TestCase):
              patch("pathlib.Path.resolve", new=resolve_without_following_broken_destinations), \
              patch("setup_speech.download_model_file") as download, \
              patch("setup_speech.WhisperCppRecognizer", return_value=SimpleNamespace(binary="whisper-cli")), \
+             patch("setup_speech.executable", side_effect=lambda env, default: str(default)), \
              patch("setup_speech.run_speech_command"), \
              patch("setup_speech.new_fallback_tts", return_value=fallback):
             setup_speech.setup_speech()

@@ -35,7 +35,17 @@ export PYTHONUNBUFFERED=1
 # Kill existing processes only if NOT running under systemd
 # (systemd handles process lifecycle; killing ports here causes crash loops)
 if [ -z "$INVOCATION_ID" ]; then
-    lsof -ti:9379,3000,5173 | xargs kill -9 2>/dev/null || true
+    lsof -ti:9379,3000,5173 | xargs -r kill -TERM 2>/dev/null || true
+    # Allow the old backend to stop its resident Whisper worker and release
+    # sockets before replacements are launched or Gemma warmup is requested.
+    for i in $(seq 1 15); do
+        if [ -z "$(lsof -ti:9379,3000,5173 2>/dev/null)" ]; then break; fi
+        sleep 1
+    done
+    if [ -n "$(lsof -ti:9379,3000,5173 2>/dev/null)" ]; then
+        echo "[start.sh] Previous services have not released their ports. Stop them before restarting."
+        exit 1
+    fi
 fi
 
 LITERT_PORT=9379
@@ -104,6 +114,12 @@ for i in $(seq 1 60); do
     fi
     sleep 1
 done
+
+# A /models probe does not load Gemma. One tiny local inference moves the first
+# translation's model-loading delay to startup, retaining the same cached engine.
+if [ "${GEMMA_WARMUP:-1}" != "0" ]; then
+    "${PROJECT_DIR}/venv/bin/python3" "${PROJECT_DIR}/backend/warmup.py" || true
+fi
 
 # Start API server
 echo "[start.sh] Starting API server on port ${API_PORT}..."

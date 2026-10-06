@@ -26,6 +26,8 @@ import wave
 import traceback
 import socket
 import ssl
+import time
+import signal
 
 import threading
 from collections import OrderedDict
@@ -113,7 +115,47 @@ def get_stt_recognizer(language="en"):
 
 PORT = 3000
 
+
+def prewarm_speech_models():
+    languages = list(dict.fromkeys(
+        language.strip() for language in os.environ.get("SPEECH_PREWARM_LANGUAGES", "ar,en").split(',')
+        if language.strip()
+    ))
+    if not languages:
+        return
+    if len(languages) > MAX_MODELS or any(language not in SUPPORTED_STT_LANGS for language in languages):
+        print("[Prewarm Error] SPEECH_PREWARM_LANGUAGES must contain at most two supported codes.", flush=True)
+        return
+    for language in languages:
+        try:
+            print(f"[Prewarm] Loading STT and TTS for {language}...", flush=True)
+            with _stt_lock:
+                recognizer = get_stt_recognizer(language)
+                warmup = getattr(recognizer, "warmup", None)
+                if callable(warmup):
+                    warmup()
+            get_tts_engine(language)
+            print(f"[Prewarm] {language} speech models ready.", flush=True)
+        except Exception as exc:
+            print(f"[Prewarm Error] lang={language}: {exc}", flush=True)
+
+
 class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
+    def speech_timing(self, stage, language, started, queued, acquired, loaded, inferred):
+        completed = time.perf_counter()
+        durations = {
+            "prepare": (queued - started) * 1000,
+            "queue": (acquired - queued) * 1000,
+            "load": (loaded - acquired) * 1000,
+            "inference": (inferred - loaded) * 1000,
+            "encode": (completed - inferred) * 1000,
+        }
+        self.send_header('Server-Timing', ', '.join(
+            f'{stage}-{name};dur={duration:.1f}' for name, duration in durations.items()
+        ))
+        detail = ' '.join(f'{name}_ms={duration:.1f}' for name, duration in durations.items())
+        print(f"[Perf] stage={stage} lang={language} {detail} total_ms={(completed - started) * 1000:.1f}", flush=True)
+
     def speech_error(self, error):
         status = 503 if isinstance(error, OfflineSpeechError) else 500
         if isinstance(error, ValueError):
@@ -174,14 +216,19 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             if key.lower() not in ['host', 'connection', 'content-length', 'x-target-url']:
                 req.add_header(key, val)
 
+        started = time.perf_counter()
         try:
             with urllib.request.urlopen(req, timeout=300) as response:
                 res_body = response.read()
+                elapsed = (time.perf_counter() - started) * 1000
                 self.send_response(response.status)
                 # Forward response headers
                 for key, val in response.headers.items():
                     if key.lower() not in ['content-length', 'connection']:
                         self.send_header(key, val)
+                self.send_header('Server-Timing', f'gemma;dur={elapsed:.1f}')
+                if parsed_target.path.endswith('/chat/completions'):
+                    print(f"[Perf] stage=translation total_ms={elapsed:.1f}", flush=True)
                 self.end_headers()
                 self.wfile.write(res_body)
         except urllib.error.HTTPError as e:
@@ -213,10 +260,15 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
 
         print(f"[TTS] Request lang={lang} chars={len(text)}")
 
+        started = time.perf_counter()
         try:
+            queued = time.perf_counter()
             with _tts_lock:
+                acquired = time.perf_counter()
                 engine = get_tts_engine(lang)
+                loaded = time.perf_counter()
                 audio, sample_rate = engine.synthesize(text)
+                inferred = time.perf_counter()
 
             # All speech adapters return mono floats; encode the existing 16-bit PCM WAV API.
             samples = np.asarray(audio, dtype=np.float32)
@@ -234,6 +286,7 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'audio/wav')
             self.send_header('Content-Length', str(len(wav_bytes)))
+            self.speech_timing('tts', lang, started, queued, acquired, loaded, inferred)
             self.end_headers()
             self.wfile.write(wav_bytes)
         except Exception as e:
@@ -242,6 +295,7 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             self.speech_error(e)
 
     def handle_stt(self):
+        started = time.perf_counter()
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
@@ -262,16 +316,22 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             if not audio_np.size or not np.isfinite(audio_np).all():
                 raise ValueError("Audio must contain finite mono Float32 PCM samples")
 
+            queued = time.perf_counter()
             with _stt_lock:
+                acquired = time.perf_counter()
                 recognizer = get_stt_recognizer(language)
+                loaded = time.perf_counter()
                 transcript = recognizer.transcribe_without_streaming(audio_np, 16000)
+                inferred = time.perf_counter()
             text = " ".join([line.text for line in transcript.lines])
             print(f"[STT] Transcribed: {text}")
+            result_bytes = json.dumps({"text": text}).encode('utf-8')
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
+            self.speech_timing('stt', language, started, queued, acquired, loaded, inferred)
             self.end_headers()
-            self.wfile.write(json.dumps({"text": text}).encode('utf-8'))
+            self.wfile.write(result_bytes)
         except Exception as e:
             traceback.print_exc()
             print(f"[STT Error] Exception: {e}")
@@ -509,17 +569,15 @@ if __name__ == '__main__':
         if local_ip != "localhost":
             print(f"👉 {protocol}://{local_ip}:{PORT} (Local Network)")
         print(f"===========================================================")
-        def _prewarm_models():
-            try:
-                print("[Prewarm] Loading default English STT & TTS models into memory...", flush=True)
-                get_stt_recognizer("en")
-                get_tts_engine("en")
-                print("[Prewarm] Models pre-warmed successfully.", flush=True)
-            except Exception as e:
-                print(f"[Prewarm Error] {e}", flush=True)
+        threading.Thread(target=prewarm_speech_models, daemon=True).start()
+        def stop_server(signum, frame):
+            raise KeyboardInterrupt
 
-        threading.Thread(target=_prewarm_models, daemon=True).start()
+        signal.signal(signal.SIGTERM, stop_server)
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nShutting down server.")
+        finally:
+            from whisper_server import close_whisper_server
+            close_whisper_server(shutdown=True)
