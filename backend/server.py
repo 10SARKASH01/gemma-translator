@@ -38,7 +38,7 @@ from offline_speech import (
     moonshine_stt_model, moonshine_tts_dir, new_fallback_tts,
 )
 
-# Existing languages use Moonshine; Persian/Urdu use local whisper.cpp.
+# Existing languages use Moonshine; French/Persian/Urdu use local whisper.cpp.
 # Language is fixed at recognizer construction, so we lazily build (and cache) one
 # recognizer per language actually used.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -68,7 +68,7 @@ def get_tts_engine(language="en"):
         if language in _tts_engines:
             _tts_engines.move_to_end(language)
             return _tts_engines[language]
-        if language in WHISPER_STT_LANGS:
+        if language not in TTS_LANG_MAP:
             engine = new_fallback_tts(language)
         else:
             from moonshine_voice import TextToSpeech

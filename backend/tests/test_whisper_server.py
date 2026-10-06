@@ -146,14 +146,14 @@ class WhisperServerTests(unittest.TestCase):
     def recognizer(self, language="fa"):
         return speech.WhisperCppRecognizer(language)
 
-    def test_fa_and_ur_share_one_worker_and_keep_existing_pcm_contract(self):
+    def test_fa_ur_and_fr_share_one_worker_and_keep_existing_pcm_contract(self):
         pcm = np.array([0, 0.5, -0.5, 2], dtype=np.float32)
-        for language, expected in [("fa", "سلام"), ("ur", "آپ کیسے ہیں؟")]:
+        for language, expected in [("fa", "سلام"), ("ur", "آپ کیسے ہیں؟"), ("fr", "Bonjour")]:
             self.reply = {"text": " " + expected + " "}
             result = self.recognizer(language).transcribe_without_streaming(pcm, 16000)
             self.assertEqual(result.lines[0].text, expected)
         self.assertEqual(self.popen_mock.call_count, 1)
-        for fields, language in zip(self.requests, [b"fa", b"ur"]):
+        for fields, language in zip(self.requests, [b"fa", b"ur", b"fr"]):
             self.assertEqual(fields["language"], language)
             self.assertEqual(fields["translate"], b"false")
             self.assertEqual(fields["detect_language"], b"false")

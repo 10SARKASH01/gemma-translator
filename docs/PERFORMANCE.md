@@ -6,7 +6,7 @@ The translator still runs microphone → local STT → local Gemma → local TTS
 
 | Stage | Optimization | What improves |
 | --- | --- | --- |
-| Persian/Urdu STT | One backend-managed `whisper-server` shares the multilingual model between `fa` and `ur`. WAV conversion happens automatically in memory. | Repeated utterances avoid launching Whisper and loading the model again. |
+| French/Persian/Urdu STT | One backend-managed `whisper-server` shares the multilingual model between `fr`, `fa` and `ur`. WAV conversion happens automatically in memory. | Repeated utterances avoid launching Whisper and loading the model again. |
 | Existing STT and all TTS | A configurable pair of speech languages is preloaded; existing two-entry caches remain. | Initial requests for that pair avoid engine construction. |
 | Gemma | Shorter language-specific JSON prompt and supported deterministic sampling (`temperature: 0`). | Less prompt processing and consistent output. Speed/translation quality still need device measurement. |
 | Gemma startup | One small local completion before the API starts. | Moves first-inference model loading into startup; later requests use LiteRT-LM's existing resident engine. |
@@ -15,7 +15,7 @@ The translator still runs microphone → local STT → local Gemma → local TTS
 
 Speech playback still waits for the complete Gemma translation. Prefetch overlaps TTS synthesis with audio playback. Actual inference already running on the backend may finish after browser playback is cancelled.
 
-The persistent worker uses the same multilingual GGML model, explicit `fa`/`ur` fields, and disables translation and language detection. Beam size and best-of remain 5, matching the previous CLI settings. Original languages continue to use Moonshine. Runtime requests remain local; downloads still belong to setup.
+The persistent worker uses the same multilingual GGML model, explicit `fr`/`fa`/`ur` fields, and disables translation and language detection. Beam size and best-of remain 5, matching the previous CLI settings. Original languages continue to use Moonshine. Runtime requests remain local; downloads still belong to setup.
 
 The [pinned whisper.cpp server](https://github.com/ggml-org/whisper.cpp/blob/v1.8.3/examples/server/server.cpp) supports a shared context and per-request language. The [pinned LiteRT-LM handler](https://github.com/google-ai-edge/LiteRT-LM/blob/v0.13.1/python/litert_lm_cli/commands/openai_handler.py) accepts temperature; it does not implement OpenAI-style completion limits or reasoning-effort controls, so this change does not send those settings.
 
@@ -40,7 +40,7 @@ GEMMA_WARMUP=1
 GEMMA_MODEL_NAME=gemma4-e2b
 ```
 
-Use your usual pair for `SPEECH_PREWARM_LANGUAGES`: `fa,en`, `ur,en`, or `fa,ur`, for example. Keep at most two codes. The default is `ar,en`, matching initial UI lanes. An empty value disables speech prewarming. `GEMMA_MODEL_NAME` must match the complete model name used in Settings, including model suffixes. `GEMMA_WARMUP=0` skips the startup completion; the first real translation then loads Gemma normally.
+Use your usual pair for `SPEECH_PREWARM_LANGUAGES`: `fr,en`, `fa,en`, `ur,en`, or `fa,ur`, for example. Keep at most two codes. The default is `ar,en`, matching initial UI lanes. An empty value disables speech prewarming. `GEMMA_MODEL_NAME` must match the complete model name used in Settings, including model suffixes. `GEMMA_WARMUP=0` skips the startup completion; the first real translation then loads Gemma normally.
 
 Start manually with `./start.sh --prod`, or resume the service with `sudo systemctl start gemma-translator.service`. Production uses the rebuilt frontend. Startup waits for previous listeners to release their ports after graceful termination, and the backend terminates its Whisper child on shutdown.
 
@@ -48,7 +48,7 @@ Start manually with `./start.sh --prod`, or resume the service with `sudo system
 
 `WHISPER_MODE=auto` uses the server if installed and logs a CLI fallback when missing. `WHISPER_MODE=server` requires the server and reports a useful dependency error. `WHISPER_MODE=cli` restores per-utterance processes, releasing model memory after each recording.
 
-`WHISPER_SERVER_BINARY` defaults to `<speech dir>/whisper.cpp/build/bin/whisper-server`; another local executable can be configured. The worker binds to loopback on an automatically chosen port. One model process serves both languages. It remains loaded until shutdown and survives recognizer cache eviction. Persistent residency trades baseline RAM for faster repeated requests. Measure whole-app RAM alongside Gemma and selected voices on the Pi.
+`WHISPER_SERVER_BINARY` defaults to `<speech dir>/whisper.cpp/build/bin/whisper-server`; another local executable can be configured. The worker binds to loopback on an automatically chosen port. One model process serves French, Persian and Urdu. It remains loaded until shutdown and survives recognizer cache eviction. Persistent residency trades baseline RAM for faster repeated requests. Measure whole-app RAM alongside Gemma and selected voices on the Pi.
 
 The first use can still be slower if it was not prewarmed. Switching among more than two speech languages can evict a Moonshine/Piper engine. A smaller multilingual Whisper model is an optional accuracy/latency tradeoff, not enabled here. A shorter prompt or deterministic sampling does not guarantee identical wording; verify meaning, names, and numbers with real sentences.
 

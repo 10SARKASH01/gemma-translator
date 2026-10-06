@@ -3,9 +3,9 @@ import test from "node:test"
 import { AVAILABLE_LANGUAGES, buildTranslationPrompt, textDirection } from "../src/utils/languages.js"
 import { transcribeAudio, translateText, fetchSpeechAudio } from "../src/utils/api.js"
 
-test("existing languages and initial selections are preserved; fa/ur use their own voices", () => {
-  assert.deepEqual(AVAILABLE_LANGUAGES.map((lang) => lang.code), ["ar", "en", "es", "ja", "zh", "ko", "fa", "ur"])
-  for (const code of ["fa", "ur"]) {
+test("existing languages and initial selections are preserved; French is appended with its own code", () => {
+  assert.deepEqual(AVAILABLE_LANGUAGES.map((lang) => lang.code), ["ar", "en", "es", "ja", "zh", "ko", "fa", "ur", "fr"])
+  for (const code of ["fa", "ur", "fr"]) {
     assert.equal(AVAILABLE_LANGUAGES.find((lang) => lang.code === code).ttsLang, code)
   }
 })
@@ -65,18 +65,18 @@ test("all source codes use the unchanged browser PCM transcription API", async (
   }
 })
 
-test("TTS requests keep the selected Persian/Urdu language and UTF-8 text", async () => {
+test("TTS requests keep the selected French/Persian/Urdu language and UTF-8 text", async () => {
   const originalFetch = globalThis.fetch
   try {
-    for (const code of ["fa", "ur"]) {
+    for (const [code, text] of [["fa", "سلام دنیا"], ["ur", "سلام دنیا"], ["fr", "Bonjour, ça va ?"]]) {
       globalThis.fetch = async (url) => {
         const parsed = new URL(url, "http://localhost:3000")
         assert.equal(parsed.pathname, "/api/tts")
         assert.equal(parsed.searchParams.get("lang"), code)
-        assert.equal(parsed.searchParams.get("text"), "سلام دنیا")
+        assert.equal(parsed.searchParams.get("text"), text)
         return new Response(new Blob(["mock WAV"], {type: "audio/wav"}))
       }
-      const blob = await fetchSpeechAudio("سلام دنیا", code)
+      const blob = await fetchSpeechAudio(text, code)
       assert.equal(blob.type, "audio/wav")
     }
   } finally {

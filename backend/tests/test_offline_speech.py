@@ -100,9 +100,9 @@ class OfflineSpeechTests(unittest.TestCase):
         self.assertEqual(len(timings), 1)
         self.assertIn("tts-inference;dur=", timings[0])
 
-    def test_both_languages_use_whisper_and_existing_pcm_api(self):
+    def test_french_persian_and_urdu_use_whisper_and_existing_pcm_api(self):
         pcm = np.array([0, 0.5, -0.5, 1.5], dtype="<f4")
-        for language, expected in [("fa", "سلام دنیا"), ("ur", "آپ کیسے ہیں؟")]:
+        for language, expected in [("fa", "سلام دنیا"), ("ur", "آپ کیسے ہیں؟"), ("fr", "Bonjour")]:
             with self.subTest(language=language):
                 def transcribe(args, **kwargs):
                     self.assertEqual(args[args.index("-l") + 1], language)
@@ -162,6 +162,28 @@ class OfflineSpeechTests(unittest.TestCase):
             str(self.root / "fa.onnx"), config_path=str(self.root / "fa.onnx.json"), use_cuda=False,
         )
         self.moon.TextToSpeech.assert_not_called()
+
+    def test_french_tts_uses_french_moonshine_voice_and_existing_wav_api(self):
+        self.moon.TextToSpeech.return_value = SimpleNamespace(
+            synthesize=Mock(return_value=(np.array([0, 0.5, -0.5, 0]), 22050)),
+        )
+        with patch("server.new_fallback_tts", side_effect=AssertionError("French must use its Moonshine voice")):
+            handler = self.handler("/api/tts?text=Bonjour&lang=fr")
+            handler.handle_tts()
+        self.assert_audio_response(handler)
+        self.moon.TextToSpeech.assert_called_once_with(
+            "fr-fr", voice=None, download=False, asset_root=speech.moonshine_tts_dir(),
+        )
+        self.moon.TextToSpeech.return_value.synthesize.assert_called_once_with("Bonjour")
+
+    def test_missing_french_voice_reports_setup_error_without_english_fallback(self):
+        self.moon.TextToSpeech.side_effect = RuntimeError("missing French assets")
+        handler = self.handler("/api/tts?text=Bonjour&lang=fr")
+        handler.handle_tts()
+        handler.send_response.assert_called_once_with(503)
+        self.assertIn("setup.sh", json.loads(handler.wfile.getvalue())["error"])
+        self.assertEqual(self.moon.TextToSpeech.call_args.args[0], "fr-fr")
+        self.assertEqual(self.moon.TextToSpeech.call_count, 1)
 
     def test_urdu_espeak_and_explicit_persian_espeak_return_wav(self):
         for language in ["ur", "fa"]:
@@ -233,7 +255,9 @@ class OfflineSpeechTests(unittest.TestCase):
             str(self.root / lang), SimpleNamespace(value=0),
         ))
         self.moon.download_tts_assets = Mock()
-        self.moon.TextToSpeech.return_value = SimpleNamespace(close=Mock())
+        self.moon.TextToSpeech.return_value = SimpleNamespace(
+            close=Mock(), synthesize=Mock(return_value=(np.ones(100), 22050)),
+        )
         fallback = SimpleNamespace(
             engine_name="local-test", synthesize=Mock(return_value=(np.ones(100), 22050)),
         )
@@ -245,7 +269,8 @@ class OfflineSpeechTests(unittest.TestCase):
         self.assertEqual(get_voice.call_args_list[0].args, ("fa",))
         self.assertEqual(get_voice.call_args_list[1].args, ("ur",))
         self.assertEqual(self.moon.get_model_for_language.call_count, 6)
-        self.assertEqual(self.moon.download_tts_assets.call_count, 6)
+        self.assertEqual(self.moon.download_tts_assets.call_count, 7)
+        self.assertIn("fr-fr", [call.args[0] for call in self.moon.download_tts_assets.call_args_list])
         self.assertEqual(set(json.loads((self.root / "moonshine-stt.json").read_text())), speech.MOONSHINE_STT_LANGS)
         for language in speech.MOONSHINE_STT_LANGS:
             self.assertEqual(speech.moonshine_stt_model(language), (str(self.root / language), 0))
@@ -268,7 +293,9 @@ class OfflineSpeechTests(unittest.TestCase):
             str(self.root / lang), SimpleNamespace(value=0),
         ))
         self.moon.download_tts_assets = Mock()
-        self.moon.TextToSpeech.return_value = SimpleNamespace(close=Mock())
+        self.moon.TextToSpeech.return_value = SimpleNamespace(
+            close=Mock(), synthesize=Mock(return_value=(np.ones(100), 22050)),
+        )
         fallback = SimpleNamespace(
             engine_name="local-test", synthesize=Mock(return_value=(np.ones(100), 22050)),
         )
@@ -303,10 +330,11 @@ class OfflineSpeechTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("RUN_OFFLINE_SPEECH_SMOKE") == "1", "Enable on a configured Pi for real voices")
 class RealSpeechSmokeTests(unittest.TestCase):
-    def test_local_persian_and_urdu_voices(self):
-        for lang, text in [("fa", "سلام، حال شما چطور است؟"), ("ur", "آپ کیسے ہیں؟")]:
+    def test_local_french_persian_and_urdu_voices(self):
+        for lang, text in [("fa", "سلام، حال شما چطور است؟"), ("ur", "آپ کیسے ہیں؟"),
+                           ("fr", "Bonjour, comment allez-vous ?")]:
             with self.subTest(language=lang):
-                samples, rate = speech.new_fallback_tts(lang).synthesize(text)
+                samples, rate = server.get_tts_engine(lang).synthesize(text)
                 self.assertGreater(len(samples), 100)
                 self.assertGreater(rate, 0)
                 self.assertTrue(np.isfinite(samples).all())

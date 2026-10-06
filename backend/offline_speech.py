@@ -19,10 +19,10 @@ import wave
 import numpy as np
 
 MOONSHINE_STT_LANGS = {"en", "ar", "es", "ja", "zh", "ko"}
-WHISPER_STT_LANGS = {"fa", "ur"}
+WHISPER_STT_LANGS = {"fa", "ur", "fr"}
 MOONSHINE_TTS_LANG_MAP = {
     "ar": "ar-msa", "en": "en-us", "es": "es-es",
-    "ja": "ja-jp", "zh": "zh-hans", "ko": "ko-kr",
+    "ja": "ja-jp", "zh": "zh-hans", "ko": "ko-kr", "fr": "fr-fr",
 }
 MOONSHINE_TTS_VOICE_MAP = {"zh": "kokoro_zf_xiaoxiao"}
 _warned_whisper_cli = False

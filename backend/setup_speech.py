@@ -99,11 +99,21 @@ def setup_speech():
             language, cache_root=root / "moonshine" / "stt",
         )
         manifest[language] = {"model_path": str(Path(model_path).resolve()), "model_arch": model_arch.value}
-        moon_lang = MOONSHINE_TTS_LANG_MAP[language]
+    # TTS support is independent of STT: French uses Whisper recognition but
+    # Moonshine's French voice, which must also be downloaded before going offline.
+    for language, moon_lang in sorted(MOONSHINE_TTS_LANG_MAP.items()):
+        print(f"[Setup] Downloading Moonshine voice for {language}", flush=True)
         voice = MOONSHINE_TTS_VOICE_MAP.get(language)
         download_tts_assets(moon_lang, voice=voice, cache_root=moonshine_tts_dir())
         engine = TextToSpeech(moon_lang, voice=voice, download=False, asset_root=moonshine_tts_dir())
-        engine.close()
+        try:
+            if language == "fr":
+                samples, rate = engine.synthesize("Bonjour, comment allez-vous ?")
+                if not len(samples) or rate <= 0:
+                    raise RuntimeError("No audio from French TTS")
+                print(f"[Setup] fr TTS ready: moonshine-voice, {rate} Hz", flush=True)
+        finally:
+            engine.close()
     temporary = root / "moonshine-stt.json.part"
     temporary.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     temporary.replace(root / "moonshine-stt.json")

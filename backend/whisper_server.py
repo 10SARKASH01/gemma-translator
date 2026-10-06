@@ -3,7 +3,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-"""One local whisper.cpp worker shared by Persian and Urdu recognizers."""
+"""One local whisper.cpp worker shared by French, Persian and Urdu recognizers."""
 
 import atexit
 import json
@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from offline_speech import OfflineSpeechError
+from offline_speech import OfflineSpeechError, WHISPER_STT_LANGS
 
 
 def multipart_audio(wav_bytes, language):
@@ -174,7 +174,7 @@ class WhisperServer:
             self._ensure_ready()
 
     def transcribe(self, wav_bytes, language):
-        if language not in {"fa", "ur"}:
+        if language not in WHISPER_STT_LANGS:
             raise ValueError(f"Whisper server fallback does not handle {language}")
         with self._request_lock:
             self._ensure_ready()

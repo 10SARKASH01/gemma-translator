@@ -15,6 +15,7 @@ export const AVAILABLE_LANGUAGES = [
   { code: "ko", name: "Korean", voice: "tts", ttsLang: "ko" },
   { code: "fa", name: "Persian", voice: "tts", ttsLang: "fa" },
   { code: "ur", name: "Urdu", voice: "tts", ttsLang: "ur" },
+  { code: "fr", name: "French", voice: "tts", ttsLang: "fr" },
 ]
 
 export function textDirection(languageCode) {

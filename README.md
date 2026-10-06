@@ -13,6 +13,7 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
 - **Optimized UI**: Retro-terminal styling custom-built for small hardware screens (like Raspberry Pi displays).
 - **Unified Startup**: One script to launch the LLM server, the Python API, and the React frontend.
 - **Persian and Urdu**: Offline voice input/output in either lane, with RTL text. Persian/Urdu STT uses multilingual whisper.cpp; Persian TTS uses Piper, and Urdu TTS uses eSpeak NG. Existing languages keep Moonshine.
+- **French**: French (`fr`) works in both directions using the shared Whisper recognizer, Gemma translation, and Moonshine's French voice.
 - **Pipeline performance**: A shared resident Whisper model, shorter Gemma prompt, startup warmup, and speech chunk prefetch reduce repeated work. See [configuration and stage timings](docs/PERFORMANCE.md).
 
 ## Prerequisites
@@ -45,7 +46,8 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
    ```
    On Raspberry Pi OS / Debian, setup also installs native speech dependencies,
    builds whisper.cpp, downloads its multilingual model and the Persian Piper
-   voice, and preloads all six existing Moonshine languages for offline use.
+   voice, and preloads all six existing Moonshine languages plus the French
+   Moonshine voice for offline use.
    Setup needs internet access; inference does not. See the
    [Persian/Urdu setup and verification guide](docs/OFFLINE_LANGUAGES.md) for
    custom paths, reuse of an existing Whisper model, and offline checks.

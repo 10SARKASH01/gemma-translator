@@ -1,4 +1,4 @@
-# Persian and Urdu offline language support
+# French, Persian and Urdu offline language support
 
 ## Engines and API compatibility
 
@@ -6,9 +6,10 @@
 | --- | --- | --- | --- |
 | Persian (`fa`) | Shared multilingual whisper.cpp server, explicit `fa` | Piper `fa_IR-amir-medium` by default | RTL |
 | Urdu (`ur`) | Same resident Whisper model, explicit `ur` | eSpeak NG's `ur` voice | RTL |
+| French (`fr`) | Same resident Whisper model, explicit `fr` | Moonshine French (`fr-fr`) | LTR |
 | Arabic, English, Spanish, Japanese, Chinese, Korean | Existing Moonshine recognizers | Existing Moonshine voices, including the Chinese override | Arabic RTL; others LTR |
 
-All eight languages use the existing push-to-talk capture and local Gemma/LiteRT-LM translation service. Either lane can be the source or destination. The frontend sends the selected source code in `POST /api/stt` and the destination code in `GET /api/tts`. Transcription responses remain `{"text":"..."}`; speech responses remain mono 16-bit PCM WAV. The backend automatically converts browser Float32 PCM into a 16 kHz WAV in memory for the persistent Whisper server. Optional CLI mode uses a temporary WAV and deletes it afterward. Whisper performs transcription; Gemma still performs translation. See [performance configuration and measurement](PERFORMANCE.md) for the resident worker, startup warmup, and speech prefetch.
+All nine languages use the existing push-to-talk capture and local Gemma/LiteRT-LM translation service. Either lane can be the source or destination. The frontend sends the selected source code in `POST /api/stt` and the destination code in `GET /api/tts`. Transcription responses remain `{"text":"..."}`; speech responses remain mono 16-bit PCM WAV. The backend automatically converts browser Float32 PCM into a 16 kHz WAV in memory for the persistent Whisper server. Optional CLI mode uses a temporary WAV and deletes it afterward. Whisper performs transcription; Gemma still performs translation. See [performance configuration and measurement](PERFORMANCE.md) for the resident worker, startup warmup, and speech prefetch.
 
 ```mermaid
 flowchart TD
@@ -16,7 +17,7 @@ flowchart TD
     Mic[useAudioRecorder: microphone to 16 kHz PCM] --> App
     App --> STT[POST /api/stt: ProxyHTTPRequestHandler]
     STT --> Router[get_stt_recognizer]
-    Router -->|fa / ur| Whisper[WhisperCppRecognizer]
+    Router -->|fa / ur / fr| Whisper[WhisperCppRecognizer]
     Router -->|existing six| MoonSTT[Moonshine Transcriber]
     Whisper --> Transcript[JSON transcription]
     MoonSTT --> Transcript
@@ -25,7 +26,7 @@ flowchart TD
     Gemma --> TTS[GET /api/tts: get_tts_engine]
     TTS -->|fa| Piper[PersianPiperTextToSpeech]
     TTS -->|ur| Espeak[EspeakNGTextToSpeech]
-    TTS -->|existing six| MoonTTS[Moonshine TextToSpeech]
+    TTS -->|existing six / fr| MoonTTS[Moonshine TextToSpeech]
     Piper --> WAV[WAV response and browser playback]
     Espeak --> WAV
     MoonTTS --> WAV
@@ -34,6 +35,8 @@ flowchart TD
 Persian and Urdu never select an English recognizer or voice. Missing binaries/models produce an actionable error (normally HTTP 503), visible in the result panel for STT and a speech-output alert for TTS. Runtime speech code does not download anything. Existing Moonshine STT reads a setup-generated local manifest; existing Moonshine TTS is constructed with `download=False`.
 
 ## Why these TTS engines
+
+French is supported by the pinned Moonshine TTS [asset catalog](https://github.com/moonshine-ai/moonshine/blob/v0.0.65/core/moonshine-tts/src/moonshine-asset-catalog.cpp) as `fr-fr`. The pinned STT model catalog has no French recognizer, so French input shares the existing multilingual Whisper model. Setup downloads French TTS independently from the Moonshine STT languages and synthesizes a French sentence to verify it. No additional Whisper model or runtime dependency is required.
 
 The pinned `moonshine-voice==0.0.65` integration has no Persian/Urdu voice configured, and its published TTS language list does not include either language. A better Persian option is available in the [Piper voice catalog](https://huggingface.co/rhasspy/piper-voices/blob/main/voices.json): `fa_IR-amir-medium`. It is automatically installed instead of using a synthetic voice for Persian. [Piper 1.4.2](https://pypi.org/project/piper-tts/1.4.2/) provides an ARM64 wheel and CPU inference. Its model/config are loaded locally and participate in the existing two-engine LRU cache.
 
@@ -55,9 +58,9 @@ No separate Persian/Urdu download command is needed. Deployment invokes `setup.s
 1. Installs Debian dependencies including compiler/CMake/Git, eSpeak NG and its language data, PortAudio/ALSA libraries, and offline Arabic-script/CJK fonts.
 2. Creates the Python venv and installs requirements, including Piper.
 3. Builds CPU-only whisper.cpp `v1.8.3` CLI and server (unless both configured executables already exist).
-4. Downloads a multilingual `ggml-small-q5_1.bin` model, shared by Persian/Urdu.
+4. Downloads a multilingual `ggml-small-q5_1.bin` model, shared by French/Persian/Urdu.
 5. Downloads the Persian Piper ONNX/config/model card from a pinned catalog revision.
-6. Synthesizes Persian/Urdu setup checks and downloads STT/TTS assets for all six existing Moonshine languages.
+6. Synthesizes French/Persian/Urdu setup checks and downloads STT/TTS assets for all six existing Moonshine languages, plus French TTS assets.
 
 Deployment then installs/builds the frontend, imports the Gemma model, and configures the existing service/kiosk. Disconnect only after all steps complete successfully.
 
@@ -102,7 +105,7 @@ Copy `speech.env.example` to `speech.env` **before setup** to persist overrides.
 
 Custom Whisper model paths must already exist; unset the override to use the automated download. English-only `.en` models and non-GGML formats are rejected using the model header. Custom Piper paths must include both a local ONNX model and matching config. No user home directory is hard-coded.
 
-Whisper normally keeps one multilingual model loaded in a local CPU subprocess shared by Persian/Urdu. Explicit CLI mode releases it after each utterance. The existing STT/TTS locks serialize same-type requests and two-entry engine caches remain bounded. Larger Whisper models may improve recognition but cost memory and latency. Evaluate whole-app RAM, timing, and linguistic accuracy on the Pi; small-model accuracy, especially Urdu, is not guaranteed for every accent or noisy environment.
+Whisper normally keeps one multilingual model loaded in a local CPU subprocess shared by French/Persian/Urdu. Explicit CLI mode releases it after each utterance. The existing STT/TTS locks serialize same-type requests and two-entry engine caches remain bounded. Larger Whisper models may improve recognition but cost memory and latency. Evaluate whole-app RAM, timing, and linguistic accuracy on the Pi; small-model accuracy, especially Urdu, is not guaranteed for every accent or noisy environment.
 
 On a non-Debian platform, provide Python/venv, a C++ toolchain/Git/CMake, and eSpeak NG yourself, or configure existing binaries. The automated apt/systemd path targets Raspberry Pi OS; it is not a native Windows deployment script.
 
@@ -149,7 +152,7 @@ npm --prefix frontend run build
 RUN_OFFLINE_SPEECH_SMOKE=1 venv/bin/python -m unittest discover -s backend/tests -v
 ```
 
-Unit tests use fake native engines to verify PCM conversion, forced language flags, all existing language routes, cache bounds, no runtime downloads, WAV responses, invalid models/voices, missing dependencies, and error propagation. Frontend tests check all 56 directed language pairs, selected STT/TTS codes, RTL metadata, and model prompts. The opt-in real test synthesizes Persian/Urdu using the installed engines; setup performs that check too.
+Unit tests use fake native engines to verify PCM conversion, forced language flags, all existing language routes, cache bounds, no runtime downloads, WAV responses, invalid models/voices, missing dependencies, and error propagation. Frontend tests check all 72 directed language pairs, selected STT/TTS codes, RTL metadata, and model prompts. The opt-in real test synthesizes French/Persian/Urdu using the installed engines; setup performs that check too.
 
 - **Missing executable:** rerun setup, or correct WHISPER_CPP_BINARY/ESPEAK_NG_BINARY in speech.env.
 - **Missing/wrong Whisper model:** use a multilingual `ggml-*.bin`, not an English `.en` model or a GGUF model.
@@ -157,6 +160,7 @@ Unit tests use fake native engines to verify PCM conversion, forced language fla
 - **Missing Persian voice:** rerun setup to download the ONNX/config pair; confirm custom model config uses `espeak.voice=fa`.
 - **No Urdu voice:** run `espeak-ng --voices=ur`; install Debian's espeak-ng and espeak-ng-data packages.
 - **Missing Moonshine manifest/voice assets:** rerun setup using the same OFFLINE_SPEECH_DIR as runtime. Old clones with only the Gemma model now need this one-time speech preload to work offline in every language.
+- **French voice assets missing after updating:** rerun `./setup.sh` while online and rebuild the frontend. Then select French in either lane and test “Bonjour, comment allez-vous ?” in both directions with another language. French remains LTR. Its logs show `[STT] lang=fr engine=whisper.cpp/server` and `[TTS] lang=fr engine=moonshine-voice`.
 - **Slow recognition:** shorten utterances or configure a smaller multilingual Whisper model. The default is quantized small with four CPU threads; there is no measured Pi latency claim.
 - **Microphone permission failure:** use the local Chromium kiosk or a secure browser context; remote plain HTTP microphone restrictions still apply.
 
