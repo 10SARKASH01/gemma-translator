@@ -8,8 +8,6 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
 
 ## Features
 
-- **Standalone Android app**: A native APK runs recognition, Gemma translation, and neural voices directly on an ARM64 phone such as the Samsung Galaxy S24. See [Android installation, build, and offline verification](android/README.md).
-
 - **On-Device Inference**: Uses LiteRT-LM to run the `gemma4-e2b` model entirely locally. No internet required after setup.
 - **Voice Interface**: Captures microphone audio, processes it, and sends it to the local model.
 - **Optimized UI**: Retro-terminal styling custom-built for small hardware screens (like Raspberry Pi displays).
