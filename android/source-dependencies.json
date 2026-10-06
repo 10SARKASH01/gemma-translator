@@ -1,0 +1,135 @@
+[
+  {
+    "id": "sherpa-onnx",
+    "file": "sherpa-onnx.zip",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/archive/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf.zip",
+    "sha256": "1e546178d875fae6e74ffd9aa15a13546b9a4a13d0c90c60524ca5022a113edf",
+    "bytes": 15973229
+  },
+  {
+    "id": "espeak-ng",
+    "file": "espeak-ng.zip",
+    "url": "https://github.com/csukuangfj/espeak-ng/archive/ed530aa113046142eb5115cf2fc9157854d0ffe1.zip",
+    "sha256": "e4e262cbe34f7fe21f91f1ba3397f2728e1f30eafbae7853f2b753a9ed13f0dd",
+    "bytes": 18011501
+  },
+  {
+    "id": "piper-phonemize",
+    "file": "piper-phonemize.zip",
+    "url": "https://github.com/csukuangfj/piper-phonemize/archive/f3ff95afc03640bc1399e113e83361192a2fafb4.zip",
+    "sha256": "d9cca4e2bdc7d6dd8dffb96a4668283dbd3f77a9c194a3e530c1e8eba9406a5d",
+    "bytes": 9805962
+  },
+  {
+    "id": "onnxruntime",
+    "file": "onnxruntime.zip",
+    "url": "https://github.com/microsoft/onnxruntime/archive/33ca9628233dc8f002435e868d4c2e9f82766ca1.zip",
+    "sha256": "fe3ef960659c21aff06ab864b2d7d1d786df28c8354cc67aacbd357b7cca97cc",
+    "bytes": 286110642
+  },
+  {
+    "id": "litert-lm",
+    "file": "litert-lm.zip",
+    "url": "https://github.com/google-ai-edge/LiteRT-LM/archive/a0afb5a56acd106b23a2b2385b8469834dc268c0.zip",
+    "sha256": "cbb958eacc51836128f04633c596886188868e455774d7e3e7a0e44ad8e9e17c",
+    "bytes": 389075508
+  },
+  {
+    "id": "json",
+    "file": "json.tar.gz",
+    "url": "https://github.com/nlohmann/json/archive/refs/tags/v3.12.0.tar.gz",
+    "sha256": "4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187",
+    "bytes": 9678593
+  },
+  {
+    "id": "kaldi-native-fbank",
+    "file": "kaldi-native-fbank.tar.gz",
+    "url": "https://github.com/csukuangfj/kaldi-native-fbank/archive/refs/tags/v1.22.3.tar.gz",
+    "sha256": "9176cc66fc7ce1edf85cf355b06e320c57db6297df74277f575183468893cf61",
+    "bytes": 71144
+  },
+  {
+    "id": "kaldi-decoder",
+    "file": "kaldi-decoder.tar.gz",
+    "url": "https://github.com/k2-fsa/kaldi-decoder/archive/refs/tags/v0.3.0.tar.gz",
+    "sha256": "b9f34cfb4fd3b1344100eead79ef4d37aa15962274b9e3056de345021f76a1b0",
+    "bytes": 51199
+  },
+  {
+    "id": "openfst",
+    "file": "openfst.tar.gz",
+    "url": "https://github.com/csukuangfj/openfst/archive/refs/tags/v1.8.5-2026-07-09.tar.gz",
+    "sha256": "2ff712a32952fcb01d351121a6bc8ccf4fdc6b2aa06ce8df2b3095dedd518c0e",
+    "bytes": 1501685
+  },
+  {
+    "id": "simple-sentencepiece",
+    "file": "simple-sentencepiece.tar.gz",
+    "url": "https://github.com/pkufool/simple-sentencepiece/archive/refs/tags/v0.7.tar.gz",
+    "sha256": "1748a822060a35baa9f6609f84efc8eb54dc0e74b9ece3d82367b7119fdc75af",
+    "bytes": 355335
+  },
+  {
+    "id": "hclust-cpp",
+    "file": "hclust-cpp.tar.gz",
+    "url": "https://github.com/csukuangfj/hclust-cpp/archive/refs/tags/2026-02-25.tar.gz",
+    "sha256": "8f14e024c709d73afb40ae69cb22de4b73dba67cbce40f2e518813da8139ab56",
+    "bytes": 22523
+  },
+  {
+    "id": "eigen",
+    "file": "eigen.tar.gz",
+    "url": "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz",
+    "sha256": "e9c326dc8c05cd1e044c71f30f1b2e34a6161a3b6ecf445d56b53ff1669e3dec",
+    "bytes": 2967272
+  },
+  {
+    "id": "kissfft",
+    "file": "kissfft.zip",
+    "url": "https://github.com/mborgerding/kissfft/archive/febd4caeed32e33ad8b2e0bb5ea77542c40f18ec.zip",
+    "sha256": "497103e664168ebe39580b757adbe616f6cf85a16572af581ca7bc42d0ab13fd",
+    "bytes": 74252
+  },
+  {
+    "id": "kaldifst",
+    "file": "kaldifst.tar.gz",
+    "url": "https://github.com/k2-fsa/kaldifst/archive/refs/tags/v1.8.0.tar.gz",
+    "sha256": "3f247b7e5a2409071202f5e2bc6200060f66728c0a3443c03923ad2723e040b3",
+    "bytes": 172147
+  },
+  {
+    "id": "commons-compress",
+    "file": "commons-compress.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/apache/commons/commons-compress/1.27.1/commons-compress-1.27.1-sources.jar",
+    "sha256": "90839ce19b8afb8ee50db75c84aa7555ebc054ba1bd43fdb2202cbf094c77f81",
+    "bytes": 901466
+  },
+  {
+    "id": "commons-io",
+    "file": "commons-io.jar",
+    "url": "https://repo.maven.apache.org/maven2/commons-io/commons-io/2.16.1/commons-io-2.16.1-sources.jar",
+    "sha256": "fcfe84e39fb44e38a0ea0ab0815b53adea6fff89c7b72535bc42495f400cb9a1",
+    "bytes": 527696
+  },
+  {
+    "id": "commons-codec",
+    "file": "commons-codec.jar",
+    "url": "https://repo.maven.apache.org/maven2/commons-codec/commons-codec/1.17.1/commons-codec-1.17.1-sources.jar",
+    "sha256": "2283aff7f425dff23ebdb7a8fc0f03ae21b4ced7a43aacba47cedae126dc5d4a",
+    "bytes": 372647
+  },
+  {
+    "id": "gson",
+    "file": "gson.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.13.2/gson-2.13.2-sources.jar",
+    "sha256": "058974b69cb7b0a04712278e11870e84ee8cd8fb5f551bd8401e72ba6638bfef",
+    "bytes": 207421
+  },
+  {
+    "id": "kotlin-stdlib",
+    "file": "kotlin-stdlib.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.21/kotlin-stdlib-2.2.21-sources.jar",
+    "sha256": "664f515359444a92267a13266101431a630f99d6b8d04407a92b1a0e558d33ee",
+    "bytes": 712993
+  }
+]
