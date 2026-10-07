@@ -9,16 +9,14 @@ The application sends the complete transcript in one user message. It does not
 split text into individual words for translation. TTS chunking happens after
 the translated text is available and does not alter the displayed translation.
 
-The previous short prompt asked only to translate and preserve meaning/names.
-The current prompt explicitly asks for the meaning of the whole utterance,
-natural equivalents for idioms/phrasal verbs, native grammar and word order,
-and preservation of facts, tone, negation and uncertainty. For a Persian target,
-it requests contemporary Iranian Persian in Persian script at the speaker's
-level of formality. All source languages share this Persian guidance.
+The original short prompt asked only to translate and preserve meaning/names.
+The current compact prompt asks for natural translation by meaning and idioms,
+not word by word, preserving facts, tone, names, numbers, negation and uncertainty.
+For a Persian target, it requests Iranian Persian (Farsi) in Persian script.
+All source languages share this Persian guidance.
 
-For Persian input, it also asks Gemma to interpret colloquial forms and resolve
-only clear spacing/spelling errors from the sentence context, preserving actual
-ambiguity. The displayed STT transcript remains unchanged. This is not a repair
+For Persian input, it also asks Gemma to read colloquial Persian and fix only
+clear spacing errors. The displayed STT transcript remains unchanged. This is not a repair
 for missing words or a guarantee that a damaged transcript can be understood.
 
 For example, the reported transcript `من خوب هم بشما چه تور هستین` appears to
@@ -31,6 +29,28 @@ Translation still uses one local Gemma request, the same JSON response, and
 `temperature: 0`. The extra prompt text has some input-processing cost; it does
 not add another generation pass or a model download. A prompt improvement does
 not guarantee correct translations from a small general-purpose model.
+
+## Measured prompt latency and the compact revision
+
+On the user's Pi, a text-only check of `من خوبم شما چه تور؟` returned:
+
+| Prompt | English result | Seconds |
+| --- | --- | --- |
+| Original short prompt | I am fine, and you what? | 3.51 |
+| Verbose quality prompt from `873e968` | I am fine, and you? | 14.32 |
+
+The verbose prompt improved this translation but made this request about four
+times slower. Earlier UI logs also showed Persian-source translation requests
+around 14–15 seconds. This motivated shortening the prompt while retaining
+natural meaning, idioms, faithful details and colloquial Persian guidance.
+The compact revision stays below 320 characters for every supported directed
+language pair. Character length is a budget guard, not a tokenizer measurement
+or a prediction of model latency. Its actual quality and timing need another
+Pi comparison; they are not established by unit tests.
+
+Whisper recognition is a separate cost. In the supplied log it still took about
+13 seconds on a repeated Persian utterance after the server was loaded. Changing
+the Gemma prompt does not speed up that recognition stage.
 
 ## Compare prompts on the Raspberry Pi
 
@@ -45,7 +65,8 @@ This runs five English examples through the old and current prompts using only
 `http://127.0.0.1:9379/v1`. It bypasses the microphone and voices so recognition
 and pronunciation do not affect the comparison. It uses the same frontend
 request builder and response parser as the UI. Each case prints both Persian
-translations and timings, a sample reference, and what to review. There are ten
+translations and timings, prompt character counts, available total token usage,
+a sample reference, and what to review. There are ten
 sequential inferences, so allow time on the Pi. The first result may include a
 cold-start delay. Compare warmed repetitions before drawing latency conclusions.
 
@@ -56,6 +77,20 @@ npm --prefix frontend run check:persian -- --source en --text "Could you give me
 ```
 
 Use `--source fr`, `ar`, `ur`, etc. with `--text` for another source language.
+To compare all three prompt versions on the measured greeting, with alternating
+order across two rounds:
+
+```bash
+npm --prefix frontend run check:persian -- --source fa --target en --text "من خوبم شما چه تور؟" --include-long --repeat 2
+```
+
+`previous` is the original short prompt, `long-quality` reproduces the verbose
+prompt from `873e968`, and `current` is the compact prompt used by the updated UI.
+`--include-long` is optional; it is never used in normal app requests. Each round
+prints separately. The second reverses request order to help reveal warmup/order
+effects. `--repeat` accepts 1–10 rounds; this command makes six sequential
+requests. Omit `--include-long` to compare just the original and compact prompts.
+
 For the reported Persian → English example:
 
 ```bash

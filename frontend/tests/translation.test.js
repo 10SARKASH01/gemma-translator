@@ -22,7 +22,7 @@ test("Persian translation sends the whole utterance once and preserves the model
       requests++
       const payload = JSON.parse(options.body)
       assert.equal(payload.messages[0].role, "system")
-      assert.match(payload.messages[0].content, /natural contemporary Iranian Persian/)
+      assert.match(payload.messages[0].content, /Iranian Persian \(Farsi\) in Persian script/)
       assert.deepEqual(payload.messages[1], { role: "user", content: text })
       assert.equal(payload.messages.length, 2)
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ translation }) } }] }))
@@ -44,9 +44,9 @@ test("Persian input preserves the transcript and asks Gemma to interpret colloqu
     globalThis.fetch = async (url, options) => {
       const payload = JSON.parse(options.body)
       assert.match(payload.messages[0].content, /from Persian into English/)
-      assert.match(payload.messages[0].content, /Interpret colloquial forms/)
-      assert.match(payload.messages[0].content, /only clear spacing\/spelling errors/)
-      assert.match(payload.messages[0].content, /keep unclear wording ambiguous/)
+      assert.match(payload.messages[0].content, /Read colloquial Persian/)
+      assert.match(payload.messages[0].content, /fix only clear spacing errors/)
+      assert.match(payload.messages[0].content, /negation and uncertainty/)
       assert.equal(payload.messages[1].content, text)
       return new Response(JSON.stringify({ choices: [{ message: { content: '{"translation":"I am fine. How are you?"}' } }] }))
     }

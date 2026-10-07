@@ -31,12 +31,12 @@ test("every directed language pair reaches local Gemma with the correct names", 
           assert.deepEqual(Object.keys(payload).sort(), ["messages", "model", "temperature"])
           assert.match(payload.messages[0].content, new RegExp(`from ${source.name} into ${target.name}`))
           assert.match(payload.messages[0].content, /Return only valid JSON: \{"translation":"translated text"\}/)
-          assert.match(payload.messages[0].content, /whole utterance by meaning, not word by word/)
-          assert.match(payload.messages[0].content, /idioms and phrasal verbs/)
+          assert.match(payload.messages[0].content, /naturally, by meaning and idioms, not word by word/)
           assert.match(payload.messages[0].content, /negation and uncertainty/)
           assert.equal(payload.messages[0].content.includes("Iranian Persian (Farsi)"), target.code === "fa")
-          assert.equal(payload.messages[0].content.includes("Input is spoken Persian"), source.code === "fa")
-          assert.ok(payload.messages[0].content.length < 700)
+          assert.equal(payload.messages[0].content.includes("Read colloquial Persian"), source.code === "fa")
+          // Guard the Pi latency regression while still exercising all 72 pairs.
+          assert.ok(payload.messages[0].content.length < 320)
           assert.equal(payload.messages[1].content, "recognized speech")
           return new Response(JSON.stringify({choices: [{message: {content: '{"translation":"translated speech"}'}}]}))
         }
