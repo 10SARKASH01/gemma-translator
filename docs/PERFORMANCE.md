@@ -8,7 +8,7 @@ The translator still runs microphone → local STT → local Gemma → local TTS
 | --- | --- | --- |
 | French/Persian/Urdu STT | One backend-managed `whisper-server` shares the multilingual model between `fr`, `fa` and `ur`. WAV conversion happens automatically in memory. | Repeated utterances avoid launching Whisper and loading the model again. |
 | Existing STT and all TTS | A configurable pair of speech languages is preloaded; existing two-entry caches remain. | Initial requests for that pair avoid engine construction. |
-| Gemma | Shorter language-specific JSON prompt and supported deterministic sampling (`temperature: 0`). | Less prompt processing and consistent output. Speed/translation quality still need device measurement. |
+| Gemma | One language-specific JSON request with deterministic sampling (`temperature: 0`), meaning-based instructions, and Persian phrasing guidance. | Avoids an extra rewrite pass. Prompt processing and translation quality still need device measurement; see [the local comparison](TRANSLATION_QUALITY.md). |
 | Gemma startup | One small local completion before the API starts. | Moves first-inference model loading into startup; later requests use LiteRT-LM's existing resident engine. |
 | Speech playback | Shorter first phrase, then one following WAV prepared during playback. | Earlier first speech and fewer gaps between chunks. At most one future chunk is prefetched. |
 | Diagnostics | Separate STT/Gemma/speech-start UI durations; backend queue/load/inference/encode timings. | Identifies the remaining bottleneck on the Pi. |

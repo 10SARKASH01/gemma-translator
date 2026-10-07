@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { translateText } from "../src/utils/api.js"
+import { AVAILABLE_LANGUAGES, buildTranslationPrompt } from "../src/utils/languages.js"
 
 const config = {
   endpointUrl: "http://localhost:9379/v1",
@@ -8,6 +9,53 @@ const config = {
   modelName: "gemma4-e2b",
   systemPrompt: "Translate from English into Persian. Return only JSON.",
 }
+
+test("Persian translation sends the whole utterance once and preserves the model's Persian wording", async () => {
+  const originalFetch = globalThis.fetch
+  const source = AVAILABLE_LANGUAGES.find((language) => language.code === "en")
+  const target = AVAILABLE_LANGUAGES.find((language) => language.code === "fa")
+  const text = "Could you give me a hand? I'm running late, but I don't want to cancel."
+  const translation = "می‌توانی کمکم کنی؟ دیرم شده، ولی نمی‌خواهم قرار را لغو کنم."
+  let requests = 0
+  try {
+    globalThis.fetch = async (url, options) => {
+      requests++
+      const payload = JSON.parse(options.body)
+      assert.equal(payload.messages[0].role, "system")
+      assert.match(payload.messages[0].content, /natural contemporary Iranian Persian/)
+      assert.deepEqual(payload.messages[1], { role: "user", content: text })
+      assert.equal(payload.messages.length, 2)
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ translation }) } }] }))
+    }
+    const result = await translateText(text, { ...config, systemPrompt: buildTranslationPrompt(source, target) })
+    assert.equal(result.translation, translation)
+    assert.equal(requests, 1)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("Persian input preserves the transcript and asks Gemma to interpret colloquial speech and clear spacing errors", async () => {
+  const originalFetch = globalThis.fetch
+  const source = AVAILABLE_LANGUAGES.find((language) => language.code === "fa")
+  const target = AVAILABLE_LANGUAGES.find((language) => language.code === "en")
+  const text = "من خوب هم بشما چه تور هستین"
+  try {
+    globalThis.fetch = async (url, options) => {
+      const payload = JSON.parse(options.body)
+      assert.match(payload.messages[0].content, /from Persian into English/)
+      assert.match(payload.messages[0].content, /Interpret colloquial forms/)
+      assert.match(payload.messages[0].content, /only clear spacing\/spelling errors/)
+      assert.match(payload.messages[0].content, /keep unclear wording ambiguous/)
+      assert.equal(payload.messages[1].content, text)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"translation":"I am fine. How are you?"}' } }] }))
+    }
+    const result = await translateText(text, { ...config, systemPrompt: buildTranslationPrompt(source, target) })
+    assert.equal(result.translation, "I am fine. How are you?")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
 
 test("translation timing includes receiving and parsing the complete response", async () => {
   const originalFetch = globalThis.fetch

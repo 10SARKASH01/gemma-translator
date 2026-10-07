@@ -16,6 +16,7 @@ https://github.com/user-attachments/assets/343072ce-dc78-44a7-a783-99312845cabe
 - **Persian and Urdu**: Offline voice input/output in either lane, with RTL text. Persian/Urdu STT uses multilingual whisper.cpp; Persian TTS uses Piper, and Urdu TTS uses eSpeak NG. Existing languages keep Moonshine.
 - **French**: French (`fr`) works in both directions using the shared Whisper recognizer, Gemma translation, and Moonshine's French voice.
 - **Pipeline performance**: A shared resident Whisper model, shorter Gemma prompt, startup warmup, and speech chunk prefetch reduce repeated work. See [configuration and stage timings](docs/PERFORMANCE.md).
+- **Translation quality**: Meaning-based instructions guide natural Persian phrasing and idioms. See the [local Persian translation comparison](docs/TRANSLATION_QUALITY.md) to check your installed Gemma model.
 
 ## Prerequisites
 
