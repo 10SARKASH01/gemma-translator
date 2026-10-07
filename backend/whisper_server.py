@@ -21,16 +21,12 @@ import uuid
 from offline_speech import OfflineSpeechError, WHISPER_STT_LANGS
 
 
-def multipart_audio(wav_bytes, language, options=None):
+def multipart_audio(wav_bytes, language):
     boundary = "gemma-" + uuid.uuid4().hex
     parts = []
     for name, value in {
         "language": language, "translate": "false", "detect_language": "false",
         "response_format": "json", "no_timestamps": "true",
-        # Explicitly restore every decoding field each request: the native
-        # worker is shared across languages and profiles.
-        "beam_size": 5, "best_of": 5, "audio_ctx": 0,
-        **(options or {}),
     }.items():
         parts.append(
             f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'
@@ -134,7 +130,7 @@ class WhisperServer:
                 raise OfflineSpeechError(
                     f"Could not start whisper-server: {exc}. Run ./setup.sh or set WHISPER_SERVER_BINARY."
                 ) from exc
-        print(f"[STT] Starting shared whisper.cpp server model={Path(self.model).name} (one multilingual model)", flush=True)
+        print("[STT] Starting shared whisper.cpp server (one multilingual model)", flush=True)
 
     def _ensure_ready(self):
         self._check_cancelled()
@@ -177,12 +173,12 @@ class WhisperServer:
         with self._request_lock:
             self._ensure_ready()
 
-    def transcribe(self, wav_bytes, language, *, options=None):
+    def transcribe(self, wav_bytes, language):
         if language not in WHISPER_STT_LANGS:
             raise ValueError(f"Whisper server fallback does not handle {language}")
         with self._request_lock:
             self._ensure_ready()
-            body, content_type = multipart_audio(wav_bytes, language, options)
+            body, content_type = multipart_audio(wav_bytes, language)
             request = urllib.request.Request(
                 self._base_url + "/inference", body, {"Content-Type": content_type}, method="POST",
             )

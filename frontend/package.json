@@ -8,7 +8,6 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test tests/*.test.js",
-    "check:persian": "node scripts/check-persian-translation.js",
     "format": "oxfmt ."
   },
   "dependencies": {

@@ -183,21 +183,6 @@ export default function SettingsOverlay({
           </select>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="persian-recognition">Persian Speech Recognition</label>
-          <select
-            id="persian-recognition"
-            value={config.persianSttMode || "default"}
-            onChange={(e) => handleChange("persianSttMode", e.target.value)}
-          >
-            <option value="default">Use configured default</option>
-            <option value="accurate">Accurate</option>
-            <option value="fast">Faster — check recognition accuracy</option>
-            <option value="compare">Compare both — slower, logs both results</option>
-          </select>
-          <small>Accurate uses the installed model. Compare uses one recording twice and translates the accurate result.</small>
-        </div>
-
         <div className="form-row-checkboxes">
           <label className="checkbox-container">
             <input

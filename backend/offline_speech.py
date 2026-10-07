@@ -13,7 +13,6 @@ import shutil
 import struct
 import subprocess
 import tempfile
-import time
 from types import SimpleNamespace
 import wave
 
@@ -21,7 +20,6 @@ import numpy as np
 
 MOONSHINE_STT_LANGS = {"en", "ar", "es", "ja", "zh", "ko"}
 WHISPER_STT_LANGS = {"fa", "ur", "fr"}
-WHISPER_FA_MODELS = {"small-q5_1", "large-v3-turbo-q5_0"}
 MOONSHINE_TTS_LANG_MAP = {
     "ar": "ar-msa", "en": "en-us", "es": "es-es",
     "ja": "ja-jp", "zh": "zh-hans", "ko": "ko-kr", "fr": "fr-fr",
@@ -80,22 +78,6 @@ def positive_int(env_name, default):
     raise OfflineSpeechError(f"{env_name} must be a positive integer.")
 
 
-def whisper_model_path(language):
-    """A Persian-only model override leaves French/Urdu model selection intact."""
-    default = speech_dir() / "whisper" / "ggml-small-q5_1.bin"
-    setting = "WHISPER_MODEL_PATH"
-    if language == "fa":
-        if os.environ.get("WHISPER_FA_MODEL_PATH"):
-            setting = "WHISPER_FA_MODEL_PATH"
-        elif os.environ.get("WHISPER_FA_MODEL"):
-            preset = os.environ["WHISPER_FA_MODEL"]
-            if preset not in WHISPER_FA_MODELS:
-                raise OfflineSpeechError("WHISPER_FA_MODEL must be small-q5_1 or large-v3-turbo-q5_0.")
-            default = speech_dir() / "whisper" / f"ggml-{preset}.bin"
-            return default.expanduser().resolve(), "WHISPER_FA_MODEL"
-    return Path(os.environ.get(setting, default)).expanduser().resolve(), setting
-
-
 def run_speech_command(args, *, input_text=None, timeout=300):
     try:
         return subprocess.run(
@@ -143,12 +125,12 @@ class WhisperCppRecognizer:
                 _warned_whisper_cli = True
         if self.mode == "server":
             self.engine_name = "whisper.cpp/server"
-        self.model, model_setting = whisper_model_path(language)
+        self.model = Path(os.environ.get(
+            "WHISPER_MODEL_PATH", speech_dir() / "whisper" / "ggml-small-q5_1.bin",
+        )).expanduser().resolve()
         try:
             with self.model.open("rb") as model_file:
                 magic, vocabulary = struct.unpack("<II", model_file.read(8))
-                context_header = model_file.read(4)
-            self.max_audio_ctx = struct.unpack("<I", context_header)[0] if len(context_header) == 4 else 0
             # GGML Whisper header: magic then n_vocab. English-only models have
             # 51864 tokens; multilingual models have at least 51865.
             if magic != 0x67676D6C or vocabulary < 51865:
@@ -156,16 +138,10 @@ class WhisperCppRecognizer:
         except (OSError, ValueError, struct.error) as exc:
             raise OfflineSpeechError(
                 f"Invalid/missing multilingual Whisper model at {self.model}: {exc}. "
-                f"Check {model_setting}; use WHISPER_MODEL_PATH/WHISPER_FA_MODEL_PATH "
-                "for an existing multilingual ggml-*.bin, or run ./setup.sh. "
-                "For the Persian quality model, run ./setup-offline-speech.sh --persian-quality while online."
+                "Run ./setup.sh or set WHISPER_MODEL_PATH to a multilingual ggml-*.bin model."
             ) from exc
         self.threads = positive_int("WHISPER_THREADS", 4)
         self.timeout = positive_int("SPEECH_TIMEOUT_SECONDS", 300)
-        self.profile = os.environ.get("WHISPER_FA_PROFILE", "accurate") if language == "fa" else "accurate"
-        if self.profile not in {"accurate", "fast"}:
-            raise OfflineSpeechError("WHISPER_FA_PROFILE must be accurate or fast.")
-        self._comparison_round = 0
 
     def _server(self):
         from whisper_server import get_whisper_server
@@ -175,53 +151,13 @@ class WhisperCppRecognizer:
         if self.mode == "server":
             self._server().warmup()
 
-    def transcribe_without_streaming(self, audio, sample_rate, *, profile=None):
+    def transcribe_without_streaming(self, audio, sample_rate):
         if sample_rate != 16000:
             raise ValueError("whisper.cpp input must be 16 kHz mono")
         samples = np.asarray(audio, dtype=np.float32)
         if samples.ndim != 1 or not samples.size or not np.isfinite(samples).all():
             raise ValueError("Audio must contain finite mono Float32 PCM samples")
-        profile = profile or self.profile
-        if profile not in {"accurate", "fast", "compare"} or (self.language != "fa" and profile != "accurate"):
-            raise ValueError("Persian recognition profile must be accurate, fast or compare; other languages use accurate.")
-        if profile == "compare":
-            self._comparison_round += 1
-            profiles = ["accurate", "fast"] if self._comparison_round % 2 else ["fast", "accurate"]
-            comparison = []
-            # Move server/model startup outside the individual comparison clocks.
-            self.warmup()
-            for candidate in profiles:
-                started = time.perf_counter()
-                text = self._transcribe_samples(samples, candidate)
-                result = {"profile": candidate, "seconds": round(time.perf_counter() - started, 3), "text": text}
-                comparison.append(result)
-                print("[STT Compare] " + json.dumps(result, ensure_ascii=False), flush=True)
-            text = next(result["text"] for result in comparison if result["profile"] == "accurate")
-            return SimpleNamespace(lines=[SimpleNamespace(text=text)], comparison=comparison)
-        text = self._transcribe_samples(samples, profile)
-        return SimpleNamespace(lines=[SimpleNamespace(text=text)])
-
-    def _transcribe_samples(self, samples, profile):
-        beam_size = 1 if profile == "fast" else 5
-        audio_ctx = 0
-        if profile == "fast" and self.max_audio_ctx > 0:
-            # Whisper encoder positions cover 320 samples (20ms) each. For short
-            # clips, retain ALL audio plus 2.56s of padding, in 256-position blocks.
-            # Long clips and unknown headers retain the original full context.
-            needed = (samples.size + 319) // 320 + 128
-            candidate = max(512, ((needed + 255) // 256) * 256)
-            if candidate < self.max_audio_ctx:
-                audio_ctx = candidate
-        options = {"beam_size": beam_size, "best_of": beam_size, "audio_ctx": audio_ctx}
-        rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
-        peak = float(np.max(np.abs(samples)))
-        clipped = float(np.mean(np.abs(samples) >= 0.999)) * 100
-        print(
-            f"[STT] lang={self.language} engine={self.engine_name} profile={profile} "
-            f"model={self.model.name} threads={self.threads} "
-            f"audio_s={samples.size / 16000:.3f} beam={beam_size} audio_ctx={audio_ctx} "
-            f"rms_db={20 * np.log10(max(rms, 1e-10)):.1f} peak={peak:.3f} clipped_pct={clipped:.2f}", flush=True,
-        )
+        print(f"[STT] lang={self.language} engine={self.engine_name}", flush=True)
         if self.mode == "server":
             with io.BytesIO() as buffer:
                 with wave.open(buffer, "wb") as wav_file:
@@ -230,8 +166,8 @@ class WhisperCppRecognizer:
                     wav_file.setframerate(16000)
                     pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
                     wav_file.writeframes(pcm.tobytes())
-                text = self._server().transcribe(buffer.getvalue(), self.language, options=options)
-            return text
+                text = self._server().transcribe(buffer.getvalue(), self.language)
+            return SimpleNamespace(lines=[SimpleNamespace(text=text)])
         # Conversion is automatic: the browser still sends the existing PCM API
         # payload. Temporary recordings and transcripts are deleted after use.
         with tempfile.TemporaryDirectory(prefix="gemma-whisper-") as temp_dir:
@@ -246,7 +182,6 @@ class WhisperCppRecognizer:
             run_speech_command([
                 self.binary, "-m", str(self.model), "-f", str(wav_path),
                 "-l", self.language, "-t", str(self.threads), "-ng",
-                "-bs", str(beam_size), "-bo", str(beam_size), "-ac", str(audio_ctx),
                 "-otxt", "-of", str(output), "-np", "-nt",
             ], timeout=self.timeout)
             try:
@@ -255,7 +190,7 @@ class WhisperCppRecognizer:
                 raise OfflineSpeechError(
                     "whisper.cpp produced no transcript file. Check its CLI version/model."
                 ) from exc
-        return text
+        return SimpleNamespace(lines=[SimpleNamespace(text=text)])
 
 
 def close_whisper_server(shutdown=False):

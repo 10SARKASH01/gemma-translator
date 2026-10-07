@@ -142,7 +142,7 @@ function TranslatorApp({ config, controlsDisabled = false }) {
       // 1. Transcription
       setTranscriptionData((prev) => ({ ...prev, text: "Listening..." }))
       const sttStarted = performance.now()
-      const transcribedText = await transcribeAudio(base64Data, src.code, config.persianSttMode)
+      const transcribedText = await transcribeAudio(base64Data, src.code)
       if (session !== translationSessionRef.current) return
       const sttDuration = ((performance.now() - sttStarted) / 1000).toFixed(2)
       setMetaText(`STT: ${sttDuration}s`)
@@ -197,8 +197,8 @@ function TranslatorApp({ config, controlsDisabled = false }) {
       if (activePerson !== lane) playBlip("speaker")
       setActivePerson(lane)
       setActiveLaneRecording(lane)
+      playBlip("ping")
     },
-    onReady: () => playBlip("ping"),
     onAudio: (context, audio) => processTranslation(context, audio.base64Data),
   }
   if (!pushToTalkRef.current) {
@@ -206,7 +206,6 @@ function TranslatorApp({ config, controlsDisabled = false }) {
       start: () => recordingHandlersRef.current.startRecording(),
       stop: () => recordingHandlersRef.current.stopRecording(),
       onStart: (context) => recordingHandlersRef.current.onStart(context),
-      onReady: (context) => recordingHandlersRef.current.onReady(context),
       onEnd: () => setActiveLaneRecording(null),
       onAudio: (context, audio) => recordingHandlersRef.current.onAudio(context, audio),
       onError: (error) => {

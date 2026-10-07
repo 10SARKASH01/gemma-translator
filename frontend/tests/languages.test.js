@@ -31,12 +31,7 @@ test("every directed language pair reaches local Gemma with the correct names", 
           assert.deepEqual(Object.keys(payload).sort(), ["messages", "model", "temperature"])
           assert.match(payload.messages[0].content, new RegExp(`from ${source.name} into ${target.name}`))
           assert.match(payload.messages[0].content, /Return only valid JSON: \{"translation":"translated text"\}/)
-          assert.match(payload.messages[0].content, /naturally, by meaning and idioms, not word by word/)
-          assert.match(payload.messages[0].content, /negation and uncertainty/)
-          assert.equal(payload.messages[0].content.includes("Iranian Persian (Farsi)"), target.code === "fa")
-          assert.equal(payload.messages[0].content.includes("Read colloquial Persian"), source.code === "fa")
-          // Guard the Pi latency regression while still exercising all 72 pairs.
-          assert.ok(payload.messages[0].content.length < 320)
+          assert.ok(payload.messages[0].content.length < 200)
           assert.equal(payload.messages[1].content, "recognized speech")
           return new Response(JSON.stringify({choices: [{message: {content: '{"translation":"translated speech"}'}}]}))
         }
@@ -83,27 +78,6 @@ test("TTS requests keep the selected French/Persian/Urdu language and UTF-8 text
       }
       const blob = await fetchSpeechAudio(text, code)
       assert.equal(blob.type, "audio/wav")
-    }
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-})
-
-test("Persian recognition modes reach only Persian STT and comparison retains the text response", async () => {
-  const originalFetch = globalThis.fetch
-  try {
-    for (const mode of ["default", "accurate", "fast", "compare"]) {
-      for (const language of AVAILABLE_LANGUAGES) {
-        globalThis.fetch = async (url, options) => {
-          const payload = JSON.parse(options.body)
-          assert.equal(url, "/api/stt")
-          assert.equal(payload.audio_base64, "same recording")
-          assert.equal(payload.language, language.code)
-          assert.equal(payload.whisper_profile, language.code === "fa" && mode !== "default" ? mode : undefined)
-          return new Response(JSON.stringify({ text: "accurate transcript", comparison: [{ text: "fast transcript" }] }))
-        }
-        assert.equal(await transcribeAudio("same recording", language.code, mode), "accurate transcript")
-      }
     }
   } finally {
     globalThis.fetch = originalFetch

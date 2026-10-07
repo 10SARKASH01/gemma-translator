@@ -23,13 +23,5 @@ export function textDirection(languageCode) {
 }
 
 export function buildTranslationPrompt(source, target) {
-  // A reported Pi comparison showed the verbose quality prompt taking ~14s versus
-  // ~3.5s for the original short prompt. Keep the meaning guidance compact.
-  const style = target.code === "fa"
-    ? "Use Iranian Persian (Farsi) in Persian script. "
-    : ""
-  const input = source.code === "fa"
-    ? "Read colloquial Persian; resolve clear speech-to-text typos from context, keeping ambiguity. "
-    : ""
-  return `Translate from ${source.name} into ${target.name} naturally, by meaning and idioms, not word by word. Preserve facts, tone, names, numbers, negation and uncertainty. ${input}${style}Return only valid JSON: {"translation":"translated text"}.`
+  return `Translate from ${source.name} into ${target.name}. Preserve meaning and names. Return only valid JSON: {"translation":"translated text"}. No explanations or Markdown.`
 }

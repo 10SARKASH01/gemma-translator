@@ -7,15 +7,6 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--persian-quality" ] && [ "$1" != "--help" ]; }; then
-    echo "Usage: ./setup-offline-speech.sh [--persian-quality]"
-    exit 1
-fi
-if [ -f "${PROJECT_DIR}/speech.env" ]; then
-    set -a
-    source "${PROJECT_DIR}/speech.env"
-    set +a
-fi
 export OFFLINE_SPEECH_DIR="${OFFLINE_SPEECH_DIR:-${PROJECT_DIR}/models/offline-speech}"
 WHISPER_CPP_DIR="${OFFLINE_SPEECH_DIR}/whisper.cpp"
 PYTHON_BIN="${PROJECT_DIR}/venv/bin/python3"
@@ -24,10 +15,6 @@ BUILD_WHISPER=0
 if [ ! -x "$PYTHON_BIN" ]; then
     echo "[ERROR] Python venv missing. Run ./setup.sh first."
     exit 1
-fi
-if [ "${1:-}" = "--help" ]; then
-    "$PYTHON_BIN" "${PROJECT_DIR}/backend/setup_speech.py" --help
-    exit 0
 fi
 
 if [ -n "${WHISPER_CPP_BINARY:-}" ]; then
@@ -76,4 +63,4 @@ if [ "$BUILD_WHISPER" -eq 1 ]; then
         --target whisper-cli whisper-server --parallel "${WHISPER_BUILD_JOBS:-2}"
 fi
 
-"$PYTHON_BIN" "${PROJECT_DIR}/backend/setup_speech.py" "$@"
+"$PYTHON_BIN" "${PROJECT_DIR}/backend/setup_speech.py"

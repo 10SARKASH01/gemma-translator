@@ -48,16 +48,16 @@ export function playBlip(type = "language") {
     oscillator.start(now)
     oscillator.stop(now + 0.1)
   } else if (type === "ping") {
-    // A short cue after the microphone is ready, before the user starts speaking.
+    // Clear ping for recording start
     oscillator.type = "sine"
     oscillator.frequency.setValueAtTime(880, now)
 
     gainNode.gain.setValueAtTime(0, now)
     gainNode.gain.linearRampToValueAtTime(0.1, now + 0.02)
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
 
     oscillator.start(now)
-    oscillator.stop(now + 0.08)
+    oscillator.stop(now + 0.3)
   } else {
     // Quick lower/clicking blip for language
     oscillator.type = "sine"

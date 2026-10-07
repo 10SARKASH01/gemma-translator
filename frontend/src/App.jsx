@@ -29,7 +29,6 @@ function App() {
     modelName: "gemma4-e2b",
     apiKey: "",
     keyboardMode: localStorage.getItem("keyboardMode") || "landscape",
-    persianSttMode: localStorage.getItem("persianSttMode") || "default",
     useProxy: true,
     enableTts: true,
     visualizerBars: 16,
@@ -58,10 +57,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem("keyboardMode", config.keyboardMode)
   }, [config.keyboardMode])
-
-  useEffect(() => {
-    localStorage.setItem("persianSttMode", config.persianSttMode)
-  }, [config.persianSttMode])
 
   useEffect(() => {
     if (config.themeColor) {

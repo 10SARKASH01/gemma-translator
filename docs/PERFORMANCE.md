@@ -8,14 +8,14 @@ The translator still runs microphone → local STT → local Gemma → local TTS
 | --- | --- | --- |
 | French/Persian/Urdu STT | One backend-managed `whisper-server` shares the multilingual model between `fr`, `fa` and `ur`. WAV conversion happens automatically in memory. | Repeated utterances avoid launching Whisper and loading the model again. |
 | Existing STT and all TTS | A configurable pair of speech languages is preloaded; existing two-entry caches remain. | Initial requests for that pair avoid engine construction. |
-| Gemma | One language-specific JSON request with deterministic sampling (`temperature: 0`), meaning-based instructions, and Persian phrasing guidance. | Avoids an extra rewrite pass. Prompt processing and translation quality still need device measurement; see [the local comparison](TRANSLATION_QUALITY.md). |
+| Gemma | Shorter language-specific JSON prompt and supported deterministic sampling (`temperature: 0`). | Less prompt processing and consistent output. Speed/translation quality still need device measurement. |
 | Gemma startup | One small local completion before the API starts. | Moves first-inference model loading into startup; later requests use LiteRT-LM's existing resident engine. |
 | Speech playback | Shorter first phrase, then one following WAV prepared during playback. | Earlier first speech and fewer gaps between chunks. At most one future chunk is prefetched. |
 | Diagnostics | Separate STT/Gemma/speech-start UI durations; backend queue/load/inference/encode timings. | Identifies the remaining bottleneck on the Pi. |
 
 Speech playback still waits for the complete Gemma translation. Prefetch overlaps TTS synthesis with audio playback. Actual inference already running on the backend may finish after browser playback is cancelled.
 
-The persistent worker uses the same multilingual GGML model, explicit `fr`/`fa`/`ur` fields, and disables translation and language detection. Accurate decoding retains beam size and best-of 5. Persian input also has an opt-in fast profile and a same-recording comparison mode in Settings; see [Persian recognition comparisons](PERSIAN_STT_PERFORMANCE.md). Original languages continue to use Moonshine. Runtime requests remain local; downloads still belong to setup.
+The persistent worker uses the same multilingual GGML model, explicit `fr`/`fa`/`ur` fields, and disables translation and language detection. Beam size and best-of remain 5, matching the previous CLI settings. Original languages continue to use Moonshine. Runtime requests remain local; downloads still belong to setup.
 
 The [pinned whisper.cpp server](https://github.com/ggml-org/whisper.cpp/blob/v1.8.3/examples/server/server.cpp) supports a shared context and per-request language. The [pinned LiteRT-LM handler](https://github.com/google-ai-edge/LiteRT-LM/blob/v0.13.1/python/litert_lm_cli/commands/openai_handler.py) accepts temperature; it does not implement OpenAI-style completion limits or reasoning-effort controls, so this change does not send those settings.
 
