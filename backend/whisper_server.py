@@ -134,7 +134,7 @@ class WhisperServer:
                 raise OfflineSpeechError(
                     f"Could not start whisper-server: {exc}. Run ./setup.sh or set WHISPER_SERVER_BINARY."
                 ) from exc
-        print("[STT] Starting shared whisper.cpp server (one multilingual model)", flush=True)
+        print(f"[STT] Starting shared whisper.cpp server model={Path(self.model).name} (one multilingual model)", flush=True)
 
     def _ensure_ready(self):
         self._check_cancelled()

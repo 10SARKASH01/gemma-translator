@@ -47,6 +47,7 @@ class OfflineSpeechTests(unittest.TestCase):
             "WHISPER_THREADS": "4", "SPEECH_TIMEOUT_SECONDS": "30",
             "WHISPER_MODE": "cli",
             "WHISPER_FA_PROFILE": "accurate",
+            "WHISPER_FA_MODEL": "", "WHISPER_FA_MODEL_PATH": "",
         })
         self.env.start()
         (self.root / "whisper.bin").write_bytes(struct.pack("<II", 0x67676D6C, 51865))

@@ -148,3 +148,25 @@ test("a synchronous audio setup failure clears the lock", () => {
   assert.equal(control.busy, false)
   assert.deepEqual(errors, ["AudioContext unavailable"])
 })
+
+test("the ready cue waits for microphone setup and is suppressed for a cancelled quick press", async () => {
+  for (const releasedEarly of [false, true]) {
+    const ready = deferred()
+    const events = []
+    const control = createPushToTalk({
+      start: () => ready.promise,
+      stop: async () => null,
+      onStart: () => events.push("pressed"),
+      onReady: () => events.push("ready"),
+      onEnd: () => events.push("ended"),
+      onAudio: () => {},
+    })
+    control.press({ lane: 1 }, "pointer:1")
+    assert.deepEqual(events, ["pressed"])
+    if (releasedEarly) control.release("pointer:1")
+    ready.resolve(true)
+    await flush()
+    assert.deepEqual(events, releasedEarly ? ["pressed", "ended"] : ["pressed", "ready"])
+    if (!releasedEarly) control.release("pointer:1")
+  }
+})

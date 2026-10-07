@@ -17,7 +17,7 @@
 // One owner (finger, mouse, or key) holds the mic at a time. Keep the lock
 // through async microphone permission and audio encoding, independent of React
 // renders, so releasing before permission arrives cannot leave recording on.
-export function createPushToTalk({ start, stop, onStart, onEnd, onAudio, onError }) {
+export function createPushToTalk({ start, stop, onStart, onReady, onEnd, onAudio, onError }) {
   let active = null
 
   async function finish(session) {
@@ -56,6 +56,7 @@ export function createPushToTalk({ start, stop, onStart, onEnd, onAudio, onError
           }
           session.ready = true
           if (session.released) finish(session)
+          else onReady?.(context)
         }).catch(failed)
       } catch (error) {
         failed(error)

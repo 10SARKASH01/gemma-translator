@@ -21,6 +21,7 @@ import numpy as np
 
 MOONSHINE_STT_LANGS = {"en", "ar", "es", "ja", "zh", "ko"}
 WHISPER_STT_LANGS = {"fa", "ur", "fr"}
+WHISPER_FA_MODELS = {"small-q5_1", "large-v3-turbo-q5_0"}
 MOONSHINE_TTS_LANG_MAP = {
     "ar": "ar-msa", "en": "en-us", "es": "es-es",
     "ja": "ja-jp", "zh": "zh-hans", "ko": "ko-kr", "fr": "fr-fr",
@@ -79,6 +80,22 @@ def positive_int(env_name, default):
     raise OfflineSpeechError(f"{env_name} must be a positive integer.")
 
 
+def whisper_model_path(language):
+    """A Persian-only model override leaves French/Urdu model selection intact."""
+    default = speech_dir() / "whisper" / "ggml-small-q5_1.bin"
+    setting = "WHISPER_MODEL_PATH"
+    if language == "fa":
+        if os.environ.get("WHISPER_FA_MODEL_PATH"):
+            setting = "WHISPER_FA_MODEL_PATH"
+        elif os.environ.get("WHISPER_FA_MODEL"):
+            preset = os.environ["WHISPER_FA_MODEL"]
+            if preset not in WHISPER_FA_MODELS:
+                raise OfflineSpeechError("WHISPER_FA_MODEL must be small-q5_1 or large-v3-turbo-q5_0.")
+            default = speech_dir() / "whisper" / f"ggml-{preset}.bin"
+            return default.expanduser().resolve(), "WHISPER_FA_MODEL"
+    return Path(os.environ.get(setting, default)).expanduser().resolve(), setting
+
+
 def run_speech_command(args, *, input_text=None, timeout=300):
     try:
         return subprocess.run(
@@ -126,9 +143,7 @@ class WhisperCppRecognizer:
                 _warned_whisper_cli = True
         if self.mode == "server":
             self.engine_name = "whisper.cpp/server"
-        self.model = Path(os.environ.get(
-            "WHISPER_MODEL_PATH", speech_dir() / "whisper" / "ggml-small-q5_1.bin",
-        )).expanduser().resolve()
+        self.model, model_setting = whisper_model_path(language)
         try:
             with self.model.open("rb") as model_file:
                 magic, vocabulary = struct.unpack("<II", model_file.read(8))
@@ -141,7 +156,9 @@ class WhisperCppRecognizer:
         except (OSError, ValueError, struct.error) as exc:
             raise OfflineSpeechError(
                 f"Invalid/missing multilingual Whisper model at {self.model}: {exc}. "
-                "Run ./setup.sh or set WHISPER_MODEL_PATH to a multilingual ggml-*.bin model."
+                f"Check {model_setting}; use WHISPER_MODEL_PATH/WHISPER_FA_MODEL_PATH "
+                "for an existing multilingual ggml-*.bin, or run ./setup.sh. "
+                "For the Persian quality model, run ./setup-offline-speech.sh --persian-quality while online."
             ) from exc
         self.threads = positive_int("WHISPER_THREADS", 4)
         self.timeout = positive_int("SPEECH_TIMEOUT_SECONDS", 300)
@@ -196,10 +213,14 @@ class WhisperCppRecognizer:
             if candidate < self.max_audio_ctx:
                 audio_ctx = candidate
         options = {"beam_size": beam_size, "best_of": beam_size, "audio_ctx": audio_ctx}
+        rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+        peak = float(np.max(np.abs(samples)))
+        clipped = float(np.mean(np.abs(samples) >= 0.999)) * 100
         print(
             f"[STT] lang={self.language} engine={self.engine_name} profile={profile} "
             f"model={self.model.name} threads={self.threads} "
-            f"audio_s={samples.size / 16000:.3f} beam={beam_size} audio_ctx={audio_ctx}", flush=True,
+            f"audio_s={samples.size / 16000:.3f} beam={beam_size} audio_ctx={audio_ctx} "
+            f"rms_db={20 * np.log10(max(rms, 1e-10)):.1f} peak={peak:.3f} clipped_pct={clipped:.2f}", flush=True,
         )
         if self.mode == "server":
             with io.BytesIO() as buffer:

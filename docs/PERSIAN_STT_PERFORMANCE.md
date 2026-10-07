@@ -2,8 +2,9 @@
 
 Persian recognition still uses local whisper.cpp with the installed multilingual
 model and explicit `fa`. The push-to-talk workflow and browser Float32 PCM API
-are unchanged. No smaller model, cloud service, speech-language auto-detection,
-or new dependency is introduced.
+are unchanged. These profiles introduce no cloud service or speech-language
+auto-detection. For capture corrections, the optional stronger Persian-only
+model and independent translation checks, see [Persian accuracy](PERSIAN_ACCURACY.md).
 
 ## Choose a mode in the touchscreen UI
 
@@ -12,7 +13,7 @@ Open Settings → **Persian Speech Recognition**:
 | Mode | Behavior |
 | --- | --- |
 | Use configured default | Uses `WHISPER_FA_PROFILE` from `speech.env`, or Accurate when unset. |
-| Accurate | Existing five-candidate decoding with full audio context. |
+| Accurate | Existing five-candidate decoding with full audio context using the selected model. |
 | Faster — check recognition accuracy | One decoding candidate and shorter encoder context for short recordings, with the same installed model. |
 | Compare both — slower, logs both results | Runs both modes on the exact same microphone recording and prints transcripts/timings in the backend terminal. The accurate text is translated and spoken. |
 
@@ -54,7 +55,9 @@ pauses, crop the recording or cap decoded text length. Clips approaching the
 model's full context, long recordings and unknown context headers keep
 `audio_ctx=0`. At that point only the decoding-candidate change applies.
 
-The model remains resident and shared across French/Persian/Urdu in server mode.
+The model remains resident and shared across French/Persian/Urdu in server mode
+when they select the same model. A Persian-only model override switches the
+single worker on demand instead of retaining two models.
 Every request explicitly restores beam size, best-of and context, so Persian
 fast settings cannot leak into a later Urdu/French/accurate request. CLI fallback
 receives equivalent flags. Language detection and Whisper translation stay off.

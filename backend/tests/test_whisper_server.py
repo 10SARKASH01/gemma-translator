@@ -41,6 +41,7 @@ class WhisperServerTests(unittest.TestCase):
             "WHISPER_MODEL_PATH": str(self.model), "WHISPER_THREADS": "4",
             "SPEECH_TIMEOUT_SECONDS": "3",
             "WHISPER_FA_PROFILE": "accurate",
+            "WHISPER_FA_MODEL": "", "WHISPER_FA_MODEL_PATH": "",
         })
         self.environment.start()
         self.executables = patch("offline_speech.shutil.which", side_effect=lambda value: value)
@@ -335,6 +336,21 @@ class WhisperServerTests(unittest.TestCase):
         self.processes[0].terminate()
         recognizer.transcribe_without_streaming(pcm, 16000)
         self.assertEqual(self.popen_mock.call_count, 2)
+
+    def test_persian_model_switch_releases_previous_worker_and_restores_french_model(self):
+        quality = self.root / "persian-quality.bin"
+        quality.write_bytes(self.model.read_bytes())
+        with patch.dict(os.environ, {"WHISPER_FA_MODEL_PATH": str(quality)}):
+            french = self.recognizer("fr")
+            persian = self.recognizer("fa")
+            french.warmup()
+            persian.warmup()
+            self.assertEqual(self.processes[0].terminated, 1)
+            french.warmup()
+            self.assertEqual(self.processes[1].terminated, 1)
+        self.assertEqual(self.popen_mock.call_count, 3)
+        self.assertEqual([call.args[0][call.args[0].index("-m") + 1] for call in self.popen_mock.call_args_list],
+                         [str(self.model), str(quality), str(self.model)])
 
     def test_close_interrupts_active_inference_without_waiting_for_request_lock(self):
         worker = workers.get_whisper_server("whisper-server", self.model, 4, 3)

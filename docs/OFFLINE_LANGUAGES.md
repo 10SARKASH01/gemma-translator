@@ -91,6 +91,8 @@ Copy `speech.env.example` to `speech.env` **before setup** to persist overrides.
 | `WHISPER_SERVER_BINARY` | `<speech dir>/whisper.cpp/build/bin/whisper-server`; persistent multilingual worker. |
 | `WHISPER_MODE` | `auto` prefers the installed server; `server` requires it; `cli` releases memory per utterance. |
 | `WHISPER_MODEL_PATH` | `<speech dir>/whisper/ggml-small-q5_1.bin`; set to an existing multilingual GGML model to reuse it. |
+| `WHISPER_FA_MODEL` | Optional Persian-only `small-q5_1` or `large-v3-turbo-q5_0` preset. `./setup-offline-speech.sh --persian-quality` downloads/enables Turbo; see [accuracy and tradeoffs](PERSIAN_ACCURACY.md). |
+| `WHISPER_FA_MODEL_PATH` | Optional existing local multilingual GGML model for Persian only; takes priority over the Persian preset. |
 | `WHISPER_FA_PROFILE` | `accurate` (default) or `fast`; applies only to Persian input. The UI can override it or compare both on one recording; see [recognition profiles](PERSIAN_STT_PERFORMANCE.md). |
 | `WHISPER_THREADS` | 4 CPU threads. |
 | `WHISPER_BUILD_JOBS` | 2 compile jobs during setup. |

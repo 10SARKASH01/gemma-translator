@@ -35,7 +35,7 @@ test("Persian translation sends the whole utterance once and preserves the model
   }
 })
 
-test("Persian input preserves the transcript and asks Gemma to interpret colloquial speech and clear spacing errors", async () => {
+test("Persian input preserves the transcript and asks Gemma to interpret clear transcription typos without hiding ambiguity", async () => {
   const originalFetch = globalThis.fetch
   const source = AVAILABLE_LANGUAGES.find((language) => language.code === "fa")
   const target = AVAILABLE_LANGUAGES.find((language) => language.code === "en")
@@ -45,7 +45,7 @@ test("Persian input preserves the transcript and asks Gemma to interpret colloqu
       const payload = JSON.parse(options.body)
       assert.match(payload.messages[0].content, /from Persian into English/)
       assert.match(payload.messages[0].content, /Read colloquial Persian/)
-      assert.match(payload.messages[0].content, /fix only clear spacing errors/)
+      assert.match(payload.messages[0].content, /resolve clear speech-to-text typos from context, keeping ambiguity/)
       assert.match(payload.messages[0].content, /negation and uncertainty/)
       assert.equal(payload.messages[1].content, text)
       return new Response(JSON.stringify({ choices: [{ message: { content: '{"translation":"I am fine. How are you?"}' } }] }))

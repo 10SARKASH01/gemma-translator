@@ -29,7 +29,7 @@ export function buildTranslationPrompt(source, target) {
     ? "Use Iranian Persian (Farsi) in Persian script. "
     : ""
   const input = source.code === "fa"
-    ? "Read colloquial Persian; fix only clear spacing errors. "
+    ? "Read colloquial Persian; resolve clear speech-to-text typos from context, keeping ambiguity. "
     : ""
   return `Translate from ${source.name} into ${target.name} naturally, by meaning and idioms, not word by word. Preserve facts, tone, names, numbers, negation and uncertainty. ${input}${style}Return only valid JSON: {"translation":"translated text"}.`
 }

@@ -5,6 +5,8 @@
 
 """Setup-time downloads and local speech checks; never imported by the server."""
 
+import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,9 +18,25 @@ from offline_speech import (
     executable, run_speech_command, speech_dir,
 )
 
+PERSIAN_QUALITY_MODEL = "large-v3-turbo-q5_0"
+PERSIAN_QUALITY_REVISION = "5359861c739e955e79d9a303bcbc70fb988958b1"
+PERSIAN_QUALITY_SHA256 = "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
 
-def download_model_file(repo, filename, destination, revision="main"):
+
+def check_model_hash(path, expected):
+    if expected is None:
+        return
+    digest = hashlib.sha256()
+    with path.open("rb") as model_file:
+        for chunk in iter(lambda: model_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        raise RuntimeError(f"Model checksum mismatch: {path}. Remove this file and rerun setup.")
+
+
+def download_model_file(repo, filename, destination, revision="main", *, sha256=None):
     if destination.is_file() and destination.stat().st_size:
+        check_model_hash(destination, sha256)
         print(f"[Setup] Reusing {destination}", flush=True)
         return
     from huggingface_hub import hf_hub_download
@@ -26,6 +44,7 @@ def download_model_file(repo, filename, destination, revision="main"):
         repo_id=repo, filename=filename, revision=revision,
         cache_dir=str(speech_dir() / ".download-cache"),
     )).resolve(strict=True)
+    check_model_hash(cached, sha256)
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Keep HF's download verification/cache while avoiding a duplicate model
     # allocation on the Pi when the destination is on the same filesystem.
@@ -38,6 +57,43 @@ def download_model_file(repo, filename, destination, revision="main"):
     except OSError:
         shutil.copyfile(cached, temporary)
     temporary.replace(destination)
+
+
+def download_persian_quality_model():
+    model = speech_dir() / "whisper" / f"ggml-{PERSIAN_QUALITY_MODEL}.bin"
+    download_model_file(
+        "ggerganov/whisper.cpp", model.name, model, PERSIAN_QUALITY_REVISION,
+        sha256=PERSIAN_QUALITY_SHA256,
+    )
+    return model
+
+
+def enable_persian_quality(config_path):
+    """Download once and persist the Persian-only choice for startup/systemd."""
+    if os.environ.get("WHISPER_FA_MODEL_PATH"):
+        raise RuntimeError("Unset WHISPER_FA_MODEL_PATH in speech.env before selecting the built-in Persian quality model.")
+    model = download_persian_quality_model()
+    previous = os.environ.get("WHISPER_FA_MODEL")
+    try:
+        os.environ["WHISPER_FA_MODEL"] = PERSIAN_QUALITY_MODEL
+        WhisperCppRecognizer("fa")
+    finally:
+        if previous is None:
+            os.environ.pop("WHISPER_FA_MODEL", None)
+        else:
+            os.environ["WHISPER_FA_MODEL"] = previous
+    settings = {"WHISPER_FA_MODEL": PERSIAN_QUALITY_MODEL, "WHISPER_FA_PROFILE": "accurate"}
+    lines = config_path.read_text(encoding="utf-8").splitlines() if config_path.exists() else []
+    updated = []
+    for line in lines:
+        assignment = line.strip().removeprefix("export ").split("=", 1)[0].strip()
+        if assignment not in settings:
+            updated.append(line)
+    updated.extend(f"{key}={value}" for key, value in settings.items())
+    temporary = config_path.with_name(config_path.name + ".part")
+    temporary.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    temporary.replace(config_path)
+    print(f"[Setup] Persian quality model ready: {model}. Saved {config_path}. Restart the app and select Accurate in Settings.", flush=True)
 
 
 def setup_speech():
@@ -57,6 +113,8 @@ def setup_speech():
     download_model_file(
         "ggerganov/whisper.cpp", "ggml-small-q5_1.bin", whisper_model,
     )
+    if os.environ.get("WHISPER_FA_MODEL") == PERSIAN_QUALITY_MODEL and not os.environ.get("WHISPER_FA_MODEL_PATH"):
+        download_persian_quality_model()
     WhisperCppRecognizer("fa")  # Validate the multilingual model and runtime mode.
     for setting, name in [
         ("WHISPER_CPP_BINARY", "whisper-cli"), ("WHISPER_SERVER_BINARY", "whisper-server"),
@@ -121,7 +179,13 @@ def setup_speech():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--persian-quality", action="store_true", help="Download/enable local Whisper Turbo for Persian only; keep other languages unchanged.")
+    args = parser.parse_args()
     try:
-        setup_speech()
+        if args.persian_quality:
+            enable_persian_quality(Path(__file__).resolve().parent.parent / "speech.env")
+        else:
+            setup_speech()
     except Exception as exc:
         raise SystemExit(f"[Setup Error] {exc}") from exc

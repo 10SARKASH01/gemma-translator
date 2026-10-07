@@ -195,7 +195,7 @@ export default function SettingsOverlay({
             <option value="fast">Faster — check recognition accuracy</option>
             <option value="compare">Compare both — slower, logs both results</option>
           </select>
-          <small>Compare uses one recording twice. The accurate result is translated.</small>
+          <small>Accurate uses the installed model. Compare uses one recording twice and translates the accurate result.</small>
         </div>
 
         <div className="form-row-checkboxes">

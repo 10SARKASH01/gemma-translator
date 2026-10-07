@@ -15,8 +15,10 @@ not word by word, preserving facts, tone, names, numbers, negation and uncertain
 For a Persian target, it requests Iranian Persian (Farsi) in Persian script.
 All source languages share this Persian guidance.
 
-For Persian input, it also asks Gemma to read colloquial Persian and fix only
-clear spacing errors. The displayed STT transcript remains unchanged. This is not a repair
+For Persian input, it also asks Gemma to read colloquial Persian and resolve
+clear speech-to-text typos from context, keeping ambiguous wording ambiguous.
+This replaces the preceding restriction to spacing errors only. The displayed
+STT transcript remains unchanged. This is not a repair
 for missing words or a guarantee that a damaged transcript can be understood.
 
 For example, the reported transcript `من خوب هم بشما چه تور هستین` appears to
@@ -86,6 +88,8 @@ npm --prefix frontend run check:persian -- --source fa --target en --text "من 
 
 `previous` is the original short prompt, `long-quality` reproduces the verbose
 prompt from `873e968`, and `current` is the compact prompt used by the updated UI.
+Use `--include-compact` to also compare the preceding compact prompt from
+`0a4f235` (`compact-spacing`), before the spelling-error guidance changed.
 `--include-long` is optional; it is never used in normal app requests. Each round
 prints separately. The second reverses request order to help reveal warmup/order
 effects. `--repeat` accepts 1–10 rounds; this command makes six sequential

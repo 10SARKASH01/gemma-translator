@@ -197,8 +197,8 @@ function TranslatorApp({ config, controlsDisabled = false }) {
       if (activePerson !== lane) playBlip("speaker")
       setActivePerson(lane)
       setActiveLaneRecording(lane)
-      playBlip("ping")
     },
+    onReady: () => playBlip("ping"),
     onAudio: (context, audio) => processTranslation(context, audio.base64Data),
   }
   if (!pushToTalkRef.current) {
@@ -206,6 +206,7 @@ function TranslatorApp({ config, controlsDisabled = false }) {
       start: () => recordingHandlersRef.current.startRecording(),
       stop: () => recordingHandlersRef.current.stopRecording(),
       onStart: (context) => recordingHandlersRef.current.onStart(context),
+      onReady: (context) => recordingHandlersRef.current.onReady(context),
       onEnd: () => setActiveLaneRecording(null),
       onAudio: (context, audio) => recordingHandlersRef.current.onAudio(context, audio),
       onError: (error) => {

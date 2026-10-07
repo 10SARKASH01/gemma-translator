@@ -86,7 +86,9 @@ export function useAudioRecorder() {
       analyserRef.current.fftSize = 256
       source.connect(analyserRef.current)
 
-      const scriptProcessor = context.createScriptProcessor(4096, 1, 1)
+      // Deliver smaller blocks so release drops at most ~21ms at 48kHz,
+      // rather than a final ~85ms block containing the end of a word.
+      const scriptProcessor = context.createScriptProcessor(1024, 1, 1)
       scriptProcessorRef.current = scriptProcessor
       recordedSamplesRef.current = []
 
