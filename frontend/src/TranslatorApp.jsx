@@ -142,7 +142,7 @@ function TranslatorApp({ config, controlsDisabled = false }) {
       // 1. Transcription
       setTranscriptionData((prev) => ({ ...prev, text: "Listening..." }))
       const sttStarted = performance.now()
-      const transcribedText = await transcribeAudio(base64Data, src.code)
+      const transcribedText = await transcribeAudio(base64Data, src.code, config.persianSttMode)
       if (session !== translationSessionRef.current) return
       const sttDuration = ((performance.now() - sttStarted) / 1000).toFixed(2)
       setMetaText(`STT: ${sttDuration}s`)

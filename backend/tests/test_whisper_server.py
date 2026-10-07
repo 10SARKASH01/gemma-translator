@@ -34,12 +34,13 @@ class WhisperServerTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.model = self.root / "multilingual.bin"
-        self.model.write_bytes(struct.pack("<II", 0x67676D6C, 51865))
+        self.model.write_bytes(struct.pack("<III", 0x67676D6C, 51865, 1500))
         self.environment = patch.dict(os.environ, {
             "WHISPER_MODE": "server", "WHISPER_SERVER_BINARY": str(self.root / "whisper-server"),
             "WHISPER_CPP_BINARY": str(self.root / "whisper-cli"),
             "WHISPER_MODEL_PATH": str(self.model), "WHISPER_THREADS": "4",
             "SPEECH_TIMEOUT_SECONDS": "3",
+            "WHISPER_FA_PROFILE": "accurate",
         })
         self.environment.start()
         self.executables = patch("offline_speech.shutil.which", side_effect=lambda value: value)
@@ -100,7 +101,7 @@ class WhisperServerTests(unittest.TestCase):
                 owner.requests.append(fields)
                 if owner.inference_delay:
                     time.sleep(owner.inference_delay)
-                self.respond(owner.http_status, owner.reply)
+                self.respond(owner.http_status, owner.reply(fields) if callable(owner.reply) else owner.reply)
 
         class FakeProcess:
             def __init__(self):
@@ -159,6 +160,9 @@ class WhisperServerTests(unittest.TestCase):
             self.assertEqual(fields["detect_language"], b"false")
             self.assertEqual(fields["response_format"], b"json")
             self.assertEqual(fields["no_timestamps"], b"true")
+            self.assertEqual(fields["beam_size"], b"5")
+            self.assertEqual(fields["best_of"], b"5")
+            self.assertEqual(fields["audio_ctx"], b"0")
             with wave.open(io.BytesIO(fields["file"]), "rb") as wav:
                 self.assertEqual((wav.getnchannels(), wav.getsampwidth(), wav.getframerate()), (1, 2, 16000))
                 samples = np.frombuffer(wav.readframes(4), dtype="<i2")
@@ -169,6 +173,79 @@ class WhisperServerTests(unittest.TestCase):
         self.assertEqual(command[command.index("-bo") + 1], "5")
         self.assertIn("-ng", command)
         self.assertNotIn("--convert", command)
+
+    def test_fast_persian_reuses_worker_keeps_all_audio_and_resets_other_languages(self):
+        pcm = np.linspace(-0.5, 0.5, 3 * 16000, dtype=np.float32)
+        recognizer = self.recognizer("fa")
+        recognizer.transcribe_without_streaming(pcm, 16000, profile="fast")
+        fields = self.requests[-1]
+        self.assertEqual(fields["language"], b"fa")
+        self.assertEqual(fields["beam_size"], b"1")
+        self.assertEqual(fields["best_of"], b"1")
+        self.assertEqual(fields["audio_ctx"], b"512")
+        with wave.open(io.BytesIO(fields["file"]), "rb") as wav:
+            self.assertEqual(wav.getnframes(), pcm.size)
+        for language in ["fa", "ur", "fr"]:
+            self.recognizer(language).transcribe_without_streaming(pcm, 16000)
+            self.assertEqual(self.requests[-1]["beam_size"], b"5")
+            self.assertEqual(self.requests[-1]["best_of"], b"5")
+            self.assertEqual(self.requests[-1]["audio_ctx"], b"0")
+        self.assertEqual(self.popen_mock.call_count, 1)
+
+    def test_fast_context_covers_short_clips_and_long_clips_use_full_context(self):
+        recognizer = self.recognizer()
+        for seconds, expected in [(0.2, 512), (8, 768), (16, 1024), (30, 0), (35, 0)]:
+            pcm = np.ones(int(seconds * 16000), dtype=np.float32)
+            recognizer.transcribe_without_streaming(pcm, 16000, profile="fast")
+            self.assertEqual(int(self.requests[-1]["audio_ctx"]), expected)
+            if expected:
+                self.assertGreaterEqual(expected, seconds * 50 + 128)
+            with wave.open(io.BytesIO(self.requests[-1]["file"]), "rb") as wav:
+                self.assertEqual(wav.getnframes(), pcm.size)
+
+    def test_comparison_uses_identical_audio_alternates_order_and_returns_accurate_text(self):
+        self.reply = lambda fields: {"text": "accurate transcript" if fields["beam_size"] == b"5" else "fast transcript"}
+        recognizer = self.recognizer()
+        pcm = np.ones(16000, dtype=np.float32)
+        first = recognizer.transcribe_without_streaming(pcm, 16000, profile="compare")
+        second = recognizer.transcribe_without_streaming(pcm, 16000, profile="compare")
+        self.assertEqual(first.lines[0].text, "accurate transcript")
+        self.assertEqual(second.lines[0].text, "accurate transcript")
+        self.assertEqual([r["profile"] for r in first.comparison], ["accurate", "fast"])
+        self.assertEqual([r["profile"] for r in second.comparison], ["fast", "accurate"])
+        self.assertEqual(first.comparison[1]["text"], "fast transcript")
+        self.assertTrue(all(r["seconds"] >= 0 for r in first.comparison))
+        self.assertTrue(all(fields["file"] == self.requests[0]["file"] for fields in self.requests))
+        self.assertEqual(self.popen_mock.call_count, 1)
+
+    def test_configured_fast_only_affects_persian_and_invalid_profiles_fail_before_inference(self):
+        with patch.dict(os.environ, {"WHISPER_FA_PROFILE": "fast"}):
+            self.assertEqual(self.recognizer("fa").profile, "fast")
+            self.assertEqual(self.recognizer("ur").profile, "accurate")
+            self.assertEqual(self.recognizer("fr").profile, "accurate")
+        with patch.dict(os.environ, {"WHISPER_FA_PROFILE": "turbo"}):
+            with self.assertRaisesRegex(speech.OfflineSpeechError, "WHISPER_FA_PROFILE"):
+                self.recognizer()
+        with self.assertRaises(ValueError):
+            self.recognizer("ur").transcribe_without_streaming(np.ones(16), 16000, profile="fast")
+        self.popen_mock.assert_not_called()
+
+    def test_fast_cli_matches_server_settings_and_leaves_no_recording(self):
+        with patch.dict(os.environ, {"WHISPER_MODE": "cli"}):
+            recognizer = self.recognizer()
+        paths = []
+        def run(args, **kwargs):
+            self.assertEqual(args[args.index("-bs") + 1], "1")
+            self.assertEqual(args[args.index("-bo") + 1], "1")
+            self.assertEqual(args[args.index("-ac") + 1], "512")
+            self.assertEqual(args[args.index("-l") + 1], "fa")
+            self.assertNotIn("-tr", args)
+            paths.append(Path(args[args.index("-f") + 1]))
+            Path(args[args.index("-of") + 1] + ".txt").write_text("سلام", encoding="utf-8")
+        with patch("offline_speech.run_speech_command", side_effect=run):
+            self.assertEqual(recognizer.transcribe_without_streaming(np.ones(16000), 16000, profile="fast").lines[0].text, "سلام")
+        self.assertFalse(paths[0].exists())
+        self.popen_mock.assert_not_called()
 
     def test_warmup_starts_once_without_transcribing(self):
         self.recognizer("fa").warmup()

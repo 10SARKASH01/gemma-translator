@@ -89,6 +89,27 @@ test("TTS requests keep the selected French/Persian/Urdu language and UTF-8 text
   }
 })
 
+test("Persian recognition modes reach only Persian STT and comparison retains the text response", async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    for (const mode of ["default", "accurate", "fast", "compare"]) {
+      for (const language of AVAILABLE_LANGUAGES) {
+        globalThis.fetch = async (url, options) => {
+          const payload = JSON.parse(options.body)
+          assert.equal(url, "/api/stt")
+          assert.equal(payload.audio_base64, "same recording")
+          assert.equal(payload.language, language.code)
+          assert.equal(payload.whisper_profile, language.code === "fa" && mode !== "default" ? mode : undefined)
+          return new Response(JSON.stringify({ text: "accurate transcript", comparison: [{ text: "fast transcript" }] }))
+        }
+        assert.equal(await transcribeAudio("same recording", language.code, mode), "accurate transcript")
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test("missing engine errors reach the frontend instead of a silent language fallback", async () => {
   const originalFetch = globalThis.fetch
   try {

@@ -62,13 +62,14 @@ async function speechError(response, operation) {
 }
 
 // POST base64 Float32 PCM (16 kHz mono) to the selected local STT engine.
-export async function transcribeAudio(base64Data, sourceLangCode) {
+export async function transcribeAudio(base64Data, sourceLangCode, persianMode = "default") {
   const response = await fetch("/api/stt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       audio_base64: base64Data,
       language: sourceLangCode,
+      ...(sourceLangCode === "fa" && persianMode !== "default" ? { whisper_profile: persianMode } : {}),
     }),
   })
 

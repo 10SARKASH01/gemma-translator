@@ -46,6 +46,7 @@ class OfflineSpeechTests(unittest.TestCase):
             "PERSIAN_TTS_ENGINE": "piper",
             "WHISPER_THREADS": "4", "SPEECH_TIMEOUT_SECONDS": "30",
             "WHISPER_MODE": "cli",
+            "WHISPER_FA_PROFILE": "accurate",
         })
         self.env.start()
         (self.root / "whisper.bin").write_bytes(struct.pack("<II", 0x67676D6C, 51865))
@@ -317,6 +318,26 @@ class OfflineSpeechTests(unittest.TestCase):
             handler = self.handler("/api/stt", {"audio_base64": base64.b64encode(audio).decode(), "language": "fa"})
             handler.handle_stt()
             handler.send_response.assert_called_once_with(400)
+
+    def test_persian_profile_and_comparison_keep_text_api_and_existing_language_routes(self):
+        pcm = base64.b64encode(np.ones(16000, dtype="<f4").tobytes()).decode()
+        comparison = [{"profile": "accurate", "text": "سلام", "seconds": 1.0},
+                      {"profile": "fast", "text": "سلام", "seconds": 0.5}]
+        recognizer = SimpleNamespace(transcribe_without_streaming=Mock(return_value=SimpleNamespace(
+            lines=[SimpleNamespace(text="سلام")], comparison=comparison,
+        )))
+        with patch("server.get_stt_recognizer", return_value=recognizer):
+            handler = self.handler("/api/stt", {"audio_base64": pcm, "language": "fa", "whisper_profile": "compare"})
+            handler.handle_stt()
+        handler.send_response.assert_called_once_with(200)
+        self.assertEqual(json.loads(handler.wfile.getvalue()), {"text": "سلام", "comparison": comparison})
+        self.assertEqual(recognizer.transcribe_without_streaming.call_args.kwargs, {"profile": "compare"})
+        for language, profile in [("en", "fast"), ("ur", "compare"), ("fa", "turbo")]:
+            with patch("server.get_stt_recognizer") as get:
+                handler = self.handler("/api/stt", {"audio_base64": pcm, "language": language, "whisper_profile": profile})
+                handler.handle_stt()
+            handler.send_response.assert_called_once_with(400)
+            get.assert_not_called()
 
     def test_local_command_failure_timeout_and_invalid_audio_have_errors(self):
         for error in [subprocess.TimeoutExpired(["whisper-cli"], 1),

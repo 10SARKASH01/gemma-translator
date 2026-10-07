@@ -309,6 +309,9 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("Missing audio_base64 parameter")
 
             language = data.get('language', 'en')
+            profile = data.get('whisper_profile')
+            if profile is not None and (language != 'fa' or profile not in ('accurate', 'fast', 'compare')):
+                raise ValueError("whisper_profile is only supported for fa and must be accurate, fast or compare")
             raw_data = base64.b64decode(audio_b64, validate=True)
             
             # The browser sends a raw Float32Array buffer
@@ -321,11 +324,17 @@ class ProxyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 acquired = time.perf_counter()
                 recognizer = get_stt_recognizer(language)
                 loaded = time.perf_counter()
-                transcript = recognizer.transcribe_without_streaming(audio_np, 16000)
+                if profile is None:
+                    transcript = recognizer.transcribe_without_streaming(audio_np, 16000)
+                else:
+                    transcript = recognizer.transcribe_without_streaming(audio_np, 16000, profile=profile)
                 inferred = time.perf_counter()
             text = " ".join([line.text for line in transcript.lines])
             print(f"[STT] Transcribed: {text}")
-            result_bytes = json.dumps({"text": text}).encode('utf-8')
+            result = {"text": text}
+            if hasattr(transcript, 'comparison'):
+                result['comparison'] = transcript.comparison
+            result_bytes = json.dumps(result).encode('utf-8')
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
